@@ -5,6 +5,7 @@
                      результат в <логин>_stg.etl_load_log (source = cdc_health)
   dbt_build_cdc      dbt build --select tag:cdc: слой CDC в dbt (int_cases_current, dm_open_cases, audit_cdc_vs_batch,
                      снимок статусов). Если dbt недоступен воркеру, задача пропускается: запускайте руками.
+  load_clickhouse_open_cases  витрина dm_open_cases целиком в ClickHouse tabyldieva.dm_open_cases (при tabyldieva_ch_enabled = 1)
 Включать ПОСЛЕ того, как коннекторы Debezium работают (cdc/README.md). Создаётся на паузе. Это дополнение, в минимум ФТТ не входит.
 Подключение: Airflow Connection aiacademy_pg_tabyldieva (пароля в коде нет).
 """
@@ -22,6 +23,7 @@ for _p in (_HERE.parent / "ingestion", _HERE / "final_project" / "ingestion"):
         break
 
 import cdc_integration as ci      # noqa: E402
+import dbt_marts_pipeline as dm   # noqa: E402
 
 DAG_ID = "final_tabyldieva_cdc_integration"
 
@@ -59,4 +61,8 @@ with make_dag(
     def dbt_build_cdc(ds=None):
         return ci.do_dbt_build_cdc(ds)
 
-    check_cdc_health() >> dbt_build_cdc()
+    @task
+    def load_clickhouse_open_cases(ds=None):
+        return dm.do_load_clickhouse_open_cases(ds)
+
+    check_cdc_health() >> dbt_build_cdc() >> load_clickhouse_open_cases()

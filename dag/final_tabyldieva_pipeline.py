@@ -63,7 +63,7 @@ with make_dag(
     default_args={"retries": 1, "retry_delay": timedelta(minutes=1)},
     tags=["final_project", "cfpb", "tabyldieva"],
     doc_md=__doc__,
-    params={"cfpb_base": Param("", type="string", description="Только для проверки НФТ-4: недоступный адрес API, например https://localhost:9/x. Пусто = настоящий адрес. Действует только на этот запуск.")},
+    params={"cfpb_base": Param(None, type=["null", "string"], description="Только для проверки НФТ-4: недоступный адрес API, например https://localhost:9/x. Пусто = настоящий адрес. Действует только на этот запуск.")},
 ) as dag:
     # в имени вида <логин>.final_tabyldieva_pipeline префикс добавляет стенд; витрины запускаем с тем же префиксом
     PREFIX = dag.dag_id[: -len(DAG_ID)] if dag.dag_id.endswith(DAG_ID) else ""

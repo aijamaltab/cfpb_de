@@ -109,7 +109,7 @@ def do_dq_marts(ds):
     write_log("dq_marts", ds, started_at, "success", len(MART_CHECKS), None)
 
 
-# ---------- ClickHouse: витрина dm_complaints_daily за тот же день ----------
+# ---------- ClickHouse: витрины за тот же день (dm_complaints_daily, dm_company_month, dm_bank_size_quarter) ----------
 
 def do_load_clickhouse_mart(ds):
     import clickhouse_load
@@ -125,3 +125,30 @@ def do_load_clickhouse_mart(ds):
     conn.close()
     write_log("clickhouse_dm_complaints_daily", ds, started_at, "success", rows, None)
     return rows
+
+
+def _load_ch_mart(mart, ds, load):
+    """Общая обвязка: подключение, вызов загрузчика load(clickhouse_load, курсор) -> число строк, строка в etl_load_log."""
+    import clickhouse_load
+    started_at = datetime.now()
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            rows = load(clickhouse_load, cur)
+    except Exception as error:
+        conn.close()
+        write_log("clickhouse_" + mart, ds, started_at, "failed", 0, str(error)[:500])
+        raise
+    conn.close()
+    write_log("clickhouse_" + mart, ds, started_at, "success", rows, None)
+    return rows
+
+
+def do_load_clickhouse_company_month(ds):
+    """dm_company_month -> ClickHouse: месяц дня ds перегружается целиком, сверка строк и трёх сумм."""
+    return _load_ch_mart("dm_company_month", ds, lambda m, cur: m.load_company_month_day(cur, DM, ds))
+
+
+def do_load_clickhouse_bank_size(ds):
+    """dm_bank_size_quarter -> ClickHouse: пересборка целиком (как в PostgreSQL), сверка строк и сумм."""
+    return _load_ch_mart("dm_bank_size_quarter", ds, lambda m, cur: m.load_bank_size(cur, DM))

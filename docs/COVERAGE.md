@@ -23,6 +23,7 @@
 Проверено на стенде (в твоей базе, есть вывод в терминале):
 - Батч: `final_tabyldieva_pipeline` и `final_tabyldieva_datamart` за 2026-09-14 зелёные; витрины пересобраны на всё окно, 855 110 жалоб.
 - ClickHouse: суммы витрины в Postgres и ClickHouse равны (855 110).
+- ClickHouse, остальные витрины (23.10, вечер): добавлены `dm_company_month` и `dm_bank_size_quarter` (задачи DAG витрин), `dm_state_month`, `dm_type_daily` (DAG `final_tabyldieva_dbt_marts`) и `dm_open_cases` (задача DAG CDC). Проверено на встроенном ClickHouse и временной базе Postgres (создание, заливка, повтор без дублей, правка и удаление в Postgres, имитация сбоя), на стенде НЕ проверено: порядок действий в README, шаг 6.
 - CDC: коннекторы источника и приёмника `RUNNING`; `cdc/scripts/verify_cdc.py` показывает совпадение (28 240 строк, контрольная сумма); UPDATE, INSERT и DELETE доезжают до `tabyldieva_ods.ods_complaint_cases`.
 - dbt: `dbt build` целиком (с CDC) = 83 узла, `PASS=83 WARN=0 ERROR=0`; сверочные тесты dbt и витрин DAG зелёные; в снимке `complaint_cases_snapshot` у изменённого обращения две версии статуса.
 НЕ проверено на стенде: DAG `final_tabyldieva_cdc_integration`, идемпотентность перезапуска (`sql/90_acceptance_checks.sql` до и после Clear), Superset. Обновляйте эту таблицу после каждого шага.

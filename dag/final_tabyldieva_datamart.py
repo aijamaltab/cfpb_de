@@ -5,6 +5,9 @@
   build_dm_bank_size    dm_bank_size_quarter (квартал x компания): метрика «жалоб на 1 млрд USD активов» на данных API FDIC
   dq_marts              проверки витрин; красная проверка останавливает копирование в ClickHouse
   load_clickhouse       dm_complaints_daily -> ClickHouse tabyldieva.dm_complaints_daily за тот же день, сверка строк и суммы
+  load_clickhouse_company_month  dm_company_month -> ClickHouse (месяц дня ds), сверка строк и сумм
+  load_clickhouse_bank_size      dm_bank_size_quarter -> ClickHouse (пересборка целиком), сверка строк и сумм
+Витрины dbt (dm_state_month, dm_type_daily) копируются в ClickHouse скриптом tools/clickhouse_backfill_marts.py после dbt build.
 Все шаги идемпотентны. Подключение к PostgreSQL: Airflow Connection aiacademy_pg_tabyldieva.
 """
 import sys
@@ -70,4 +73,17 @@ with make_dag(
             raise AirflowSkipException("ClickHouse выключен (tabyldieva_ch_enabled != 1)")
         return dp.do_load_clickhouse_mart(ds)
 
-    [build_dm_complaints(), build_dm_bank_size()] >> dq_marts() >> load_clickhouse()
+    @task
+    def load_clickhouse_company_month(ds=None):
+        if not dp.clickhouse_enabled():
+            raise AirflowSkipException("ClickHouse выключен (tabyldieva_ch_enabled != 1)")
+        return dp.do_load_clickhouse_company_month(ds)
+
+    @task
+    def load_clickhouse_bank_size(ds=None):
+        if not dp.clickhouse_enabled():
+            raise AirflowSkipException("ClickHouse выключен (tabyldieva_ch_enabled != 1)")
+        return dp.do_load_clickhouse_bank_size(ds)
+
+    [build_dm_complaints(), build_dm_bank_size()] >> dq_marts() >> [
+        load_clickhouse(), load_clickhouse_company_month(), load_clickhouse_bank_size()]

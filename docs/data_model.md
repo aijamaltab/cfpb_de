@@ -1,6 +1,6 @@
 # Модель данных
 
-Хранилище: PostgreSQL 16, база `aiacademy`, логин `tabyldieva`. Слои: `stg` → `ods` → `datamart`, копия одной витрины в ClickHouse, поток изменений CDC.
+Хранилище: PostgreSQL 16, база `aiacademy`, логин `tabyldieva`. Слои: `stg` → `ods` → `datamart`, копии витрин в ClickHouse, поток изменений CDC.
 Источники и их роли: `docs/passport.md`. Контракты колонок и проверки: `docs/sources.md`.
 
 ## 1. Слои
@@ -74,8 +74,19 @@
 
 Метрика грубая: компании без банков в FDIC (финтех, бюро) в витрину не попадают (покрыто около 43% жалоб).
 
-### Витрина в ClickHouse
-`tabyldieva.dm_complaints_daily` (движок ReplacingMergeTree; те же колонки). Задача `load_clickhouse` DAG витрин за дату `ds` удаляет день и вставляет заново, затем сверяет число строк и `sum(complaints_cnt)` с Postgres.
+### Витрины в ClickHouse
+Все шесть витрин копируются в базу `tabyldieva` ClickHouse под теми же именами и с теми же колонками (движок ReplacingMergeTree; служебные `_dbt_run_id` и `_built_at` не копируются). Дашборды читают их оттуда. Требование ФТТ (одна витрина) выполнено, остальные сверх минимума.
+
+| Таблица | Источник в Postgres | Кто обновляет | Срез при перезагрузке |
+|---|---|---|---|
+| `dm_complaints_daily` | `<логин>_datamart` | задача `load_clickhouse` | день `ds` |
+| `dm_company_month` | `<логин>_datamart` | задача `load_clickhouse_company_month` | месяц дня `ds` |
+| `dm_bank_size_quarter` | `<логин>_datamart` | задача `load_clickhouse_bank_size` | вся таблица (в Postgres тоже пересборка целиком) |
+| `dm_state_month` | `<логин>_dbt` | DAG `final_tabyldieva_dbt_marts` (раз в сутки, после `dbt build`) | вся таблица |
+| `dm_type_daily` | `<логин>_dbt` | тот же DAG | вся таблица |
+| `dm_open_cases` | `<логин>_dbt` (слой CDC) | DAG `final_tabyldieva_cdc_integration` (раз в час, после `dbt build -s tag:cdc`) | вся таблица (снимок «на сейчас») |
+
+Каждая задача и скрипт удаляют срез, вставляют заново и сверяют с Postgres число строк и суммы метрик (`complaints_cnt` и другие целые метрики витрины); при несовпадении задача красная, в `etl_load_log` строка `failed` с текстом. Витрины dbt обновляются отдельными DAG (оба на паузе, пока их не включат) или вручную скриптом `tools/clickhouse_backfill_marts.py`. Если DAG выключен, а `dbt build` прошёл, в ClickHouse остаётся прошлая сборка.
 
 ### dbt-модели (схема `tabyldieva_dbt`)
 Структура папок как у ментора. `models/intermediate` (view): `int_complaints_enriched` (жалоба + тип компании + название штата + флаги «в работе» и «компенсация»), `int_cases_current` (CDC: обращение «как сейчас», батч и поток).
