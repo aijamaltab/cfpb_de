@@ -1,0 +1,42 @@
+name: tabyldieva_dwh
+
+version: "1.0.0"
+
+config-version: 2
+
+profile: tabyldieva_dwh
+
+model-paths: ["models"]
+seed-paths: ["seeds"]
+snapshot-paths: ["snapshots"]
+test-paths: ["tests"]
+macro-paths: ["macros"]
+
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+vars:
+  # Для варианта variants/dm_complaints_daily_v2_incremental.sql: сколько последних дней пересчитывать.
+  # 30, потому что CFPB публикует жалобы с опозданием: свежий месяц в источнике неполный.
+  lookback_days: 30
+  # Границы календаря dim_calendar. Окно жалоб: 1 окт 2023 - 30 сен 2026. Расширите, если окно расширят.
+  calendar_start: "2023-10-01"
+  calendar_end: "2026-12-31"
+
+models:
+  tabyldieva_dwh:
+    intermediate:
+      +materialized: view
+    marts:
+      +materialized: table
+
+seeds:
+  tabyldieva_dwh:
+    us_states:
+      +column_types:
+        state_code: varchar(2)
+        state_name: varchar(60)
+    complaint_status:
+      +column_types:
+        status: varchar(30)
+        status_group: varchar(10)

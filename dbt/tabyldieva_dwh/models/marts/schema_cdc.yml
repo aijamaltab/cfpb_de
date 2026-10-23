@@ -1,0 +1,50 @@
+version: 2
+
+# Модели, которые используют поток CDC (таблица tabyldieva_ods.ods_complaint_cases).
+# Пропускаются командой  dbt build --exclude tag:cdc
+models:
+  - name: int_cases_current
+    description: "Обращение «как сейчас»: поток, если он знает строку, иначе батч."
+    columns:
+      - name: complaint_id
+        description: "Ключ обращения. Уникален: full outer join идёт по ключу обеих таблиц."
+        data_tests:
+          - unique
+          - not_null
+      - name: source_of_truth
+        description: "Откуда взято значение: cdc или batch."
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['cdc', 'batch']
+
+  - name: dm_open_cases
+    description: "Обращения по продуктам и статусам, возраст в днях (CDC). Зерно: продукт x статус."
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [product, status]
+    columns:
+      - name: status
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('complaint_status')
+                field: status
+      - name: cases_cnt
+        data_tests:
+          - not_null
+          - non_negative
+
+  - name: audit_cdc_vs_batch
+    description: "Расхождения между батчем и потоком. Пустая витрина = контуры сошлись."
+    columns:
+      - name: complaint_id
+        data_tests:
+          - unique
+          - not_null
+      - name: problem
+        data_tests:
+          - not_null

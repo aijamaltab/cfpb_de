@@ -1,0 +1,103 @@
+version: 2
+
+sources:
+  - name: ods
+    schema: tabyldieva_ods
+    description: "Слой ods: типизированные данные. Заполняют DAG и приёмник CDC, dbt их только читает."
+    tables:
+      - name: ods_complaints
+        description: "Жалобы CFPB (API). Одна жалоба -- одна строка."
+        columns:
+          - name: complaint_id
+            description: "Номер жалобы в CFPB."
+            data_tests:
+              - unique
+              - not_null
+          - name: product
+            data_tests:
+              - not_null
+          - name: company
+            data_tests:
+              - not_null
+          - name: ds
+            description: "День получения жалобы (по UTC)."
+            data_tests:
+              - not_null
+
+      - name: ods_fred_dff
+        description: "Ставка ФРС по дням (CSV, FRED DFF), % годовых. Есть и выходные. is_carried = true: за день FRED ещё не опубликовал значение, перенесена последняя известная."
+        columns:
+          - name: ds
+            data_tests:
+              - unique
+              - not_null
+
+      - name: ods_dim_company
+        description: "Справочник компаний (CSV): тип компании."
+        columns:
+          - name: company_cfpb
+            data_tests:
+              - unique
+              - not_null
+          - name: company_type
+            data_tests:
+              - not_null
+              - accepted_values:
+                  arguments:
+                    values: ['auto_lender', 'bank', 'big_bank', 'brokerage_fintech', 'card_issuer', 'consumer_lender',
+                             'credit_bureau', 'credit_union', 'crypto_exchange', 'fintech_lending', 'fintech_neobank',
+                             'fintech_payments', 'mortgage_lender', 'mortgage_servicer', 'prepaid_cards',
+                             'regional_bank', 'student_loan_servicer', 'unknown']
+
+      - name: ods_company_bank
+        description: "Привязка компании из жалоб к банку FDIC (CSV). Ключ: (company_cfpb, cert)."
+        columns:
+          - name: company_cfpb
+            data_tests:
+              - not_null
+              - relationships:
+                  arguments:
+                    to: source('ods', 'ods_dim_company')
+                    field: company_cfpb
+
+      - name: ods_fdic_financials
+        description: "Квартальные показатели банков США (API FDIC)."
+
+  # CDC: эту таблицу создаёт и наполняет sink-коннектор Debezium, а не DAG. Для dbt это такой же источник,
+  # как ods: он её только читает. Пока коннектора нет, весь слой пропускается одной командой
+  #   dbt build --exclude tag:cdc
+  # (иначе упадут тесты источника и модели, которые из него читают).
+  - name: cdc
+    schema: tabyldieva_ods
+    description: "Приёмник CDC: текущее состояние обращений из tabyldieva.complaint_cases (имитация системы обращений)."
+    tags: ['cdc']
+    # loaded_at_field -- время изменения В ИСТОЧНИКЕ, а не время записи приёмником: точного времени записи
+    # у нас нет, поэтому freshness показывает отставание всей цепочки источник -> Debezium -> Kafka -> приёмник.
+    # Запуск: dbt source freshness --select source:cdc  (в dbt build не входит). Данные синтетические: «красный»
+    # результат после суток без изменений -- ожидаем, это не поломка конвейера.
+    loaded_at_field: updated_at
+    freshness:
+      warn_after: {count: 60, period: minute}
+      error_after: {count: 24, period: hour}
+    tables:
+      - name: ods_complaint_cases
+        description: "Текущее состояние обращений. Ключ -- complaint_id."
+        columns:
+          - name: complaint_id
+            data_tests:
+              - unique
+              - not_null
+          - name: status
+            description: "Статус обращения."
+            data_tests:
+              - not_null
+              - accepted_values:
+                  arguments:
+                    values: ['in_progress', 'closed_explanation', 'closed_relief', 'closed_other']
+
+  - name: datamart
+    schema: tabyldieva_datamart
+    description: "Витрины, которые считает DAG final_tabyldieva_datamart. Нужны dbt для сверки результата."
+    tables:
+      - name: dm_complaints_daily
+      - name: dm_company_month

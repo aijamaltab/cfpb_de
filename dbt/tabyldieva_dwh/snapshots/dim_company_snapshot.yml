@@ -1,0 +1,8 @@
+snapshots:
+  - name: dim_company_snapshot            # история справочника компаний (SCD2): что менялось и когда
+    relation: source('ods', 'ods_dim_company')
+    config:
+      schema: snapshots                   # схема tabyldieva_dbt_snapshots (к схеме профиля добавляется _snapshots)
+      unique_key: company_cfpb
+      strategy: check
+      check_cols: [canonical_name, company_type, fdic_candidate]

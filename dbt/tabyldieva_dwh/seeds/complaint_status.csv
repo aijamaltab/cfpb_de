@@ -1,0 +1,5 @@
+status,status_group,status_title
+in_progress,open,В работе
+closed_explanation,closed,Закрыто с разъяснением
+closed_relief,closed,Закрыто с компенсацией
+closed_other,closed,Закрыто иначе

@@ -1,0 +1,160 @@
+version: 2
+
+models:
+  - name: dim_calendar
+    description: "Календарь: по строке на день. Витрина по дням обязана ссылаться только на его дни."
+    columns:
+      - name: ds
+        description: "Дата."
+        data_tests:
+          - unique
+          - not_null
+
+  - name: dm_complaints_daily
+    description: "Жалобы по дням и продуктам (dbt-версия витрины DAG). Зерно: день x продукт."
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [ds, product]
+    columns:
+      - name: ds
+        description: "День получения жалобы."
+        data_tests:
+          - not_null
+          # ds обязан быть в календаре: витрина не придумывает дни
+          - relationships:
+              arguments:
+                to: ref('dim_calendar')
+                field: ds
+      - name: product
+        description: "Банковский продукт CFPB."
+        data_tests:
+          - not_null
+      - name: complaints_cnt
+        description: "Всего жалоб за день по продукту."
+        data_tests:
+          - not_null
+          - non_negative           # наш собственный тест
+      - name: timely_cnt
+        description: "Из них отвечено в срок."
+        data_tests:
+          - non_negative
+      - name: untimely_cnt
+        description: "Из них отвечено с опозданием."
+        data_tests:
+          - non_negative
+      - name: in_progress_cnt
+        description: "Из них в работе."
+        data_tests:
+          - non_negative
+      - name: relief_cnt
+        description: "Из них закрыто с компенсацией (денежной или неденежной)."
+        data_tests:
+          - non_negative
+      - name: fed_funds_rate
+        description: "Ставка ФРС на этот день, % годовых (CSV FRED DFF). Пусто, если в файле нет этой даты."
+
+  - name: dm_company_month
+    description: "Жалобы по месяцам и компаниям. Зерно: месяц x компания."
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [month, company]
+    columns:
+      - name: month
+        description: "Первое число месяца."
+        data_tests:
+          - not_null
+      - name: company
+        description: "Название компании как в жалобах CFPB."
+        data_tests:
+          - not_null
+      - name: company_type
+        description: "Тип компании из справочника; other, если компании нет в справочнике."
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['auto_lender', 'bank', 'big_bank', 'brokerage_fintech', 'card_issuer', 'consumer_lender',
+                         'credit_bureau', 'credit_union', 'crypto_exchange', 'fintech_lending', 'fintech_neobank',
+                         'fintech_payments', 'mortgage_lender', 'mortgage_servicer', 'prepaid_cards',
+                         'regional_bank', 'student_loan_servicer', 'unknown', 'other']
+      - name: complaints_cnt
+        description: "Всего жалоб за месяц."
+        data_tests:
+          - not_null
+          - non_negative
+
+  - name: dm_type_daily
+    description: "Жалобы по дням и типам компаний. Инкрементальная: пересчитывает последние lookback_days дней. Зерно: день x тип компании."
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [ds, company_type]
+    columns:
+      - name: ds
+        description: "День получения жалобы."
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_calendar')
+                field: ds
+      - name: company_type
+        description: "Тип компании из справочника; other, если компании нет в справочнике."
+        data_tests:
+          - not_null
+      - name: is_weekend
+        description: "Суббота или воскресенье (из dim_calendar)."
+      - name: complaints_cnt
+        description: "Всего жалоб за день по типу компании."
+        data_tests:
+          - not_null
+          - non_negative
+
+  - name: dm_state_month
+    description: "Жалобы по месяцам и штатам. Зерно: месяц x штат. Штат вне справочника -- строка unknown."
+    data_tests:
+      - unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [month, state]
+    columns:
+      - name: state
+        description: "Код штата из жалобы (две буквы) или unknown."
+        data_tests:
+          - not_null
+          # Жалобы бывают с нестандартными кодами штата. Это замечание о качестве источника, а не поломка
+          # конвейера, поэтому предупреждение, а не ошибка.
+          - relationships:
+              arguments:
+                to: ref('us_states')
+                field: state_code
+              config:
+                severity: warn
+                where: "state <> 'unknown'"
+      - name: complaints_cnt
+        data_tests:
+          - not_null
+          - non_negative
+
+seeds:
+  - name: us_states
+    description: "Справочник штатов США (и территорий): код и название."
+    columns:
+      - name: state_code
+        data_tests:
+          - unique
+          - not_null
+
+  - name: complaint_status
+    description: "Справочник статусов обращения: открыто или закрыто."
+    columns:
+      - name: status
+        data_tests:
+          - unique
+          - not_null
+      - name: status_group
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['open', 'closed']

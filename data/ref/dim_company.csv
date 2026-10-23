@@ -1,0 +1,61 @@
+company_cfpb,canonical_name,company_type,fdic_candidate,note
+"Block, Inc.",Block,fintech_payments,no,"Cash App; не банк, партнёрские банки"
+JPMORGAN CHASE & CO.,JPMorgan Chase,big_bank,yes,"холдинг; банк Chase = JPMorgan Chase Bank, N.A."
+CAPITAL ONE FINANCIAL CORPORATION,Capital One,big_bank,yes,"холдинг; банк Capital One, N.A."
+WELLS FARGO & COMPANY,Wells Fargo,big_bank,yes,"холдинг; банк Wells Fargo Bank, N.A."
+"BANK OF AMERICA, NATIONAL ASSOCIATION",Bank of America,big_bank,yes,
+"CITIBANK, N.A.",Citibank,big_bank,yes,
+NAVY FEDERAL CREDIT UNION,Navy Federal,credit_union,no,"кредитный союз: учёт в NCUA, не в FDIC"
+"Early Warning Services, LLC",Early Warning Services,fintech_payments,no,оператор Zelle; принадлежит банкам
+SYNCHRONY FINANCIAL,Synchrony,card_issuer,yes,холдинг; банк Synchrony Bank
+"Paypal Holdings, Inc",PayPal,fintech_payments,no,
+Chime Financial Inc,Chime,fintech_neobank,no,работает через партнёрские банки
+MOHELA,MOHELA,student_loan_servicer,no,обслуживает студенческие займы
+AMERICAN EXPRESS COMPANY,American Express,card_issuer,yes,проверить банк-эмитент
+"EQUIFAX, INC.",Equifax,credit_bureau,no,
+"TRANSUNION INTERMEDIATE HOLDINGS, INC.",TransUnion,credit_bureau,no,
+Experian Information Solutions Inc.,Experian,credit_bureau,no,
+U.S. BANCORP,U.S. Bancorp,big_bank,yes,"банк U.S. Bank N.A.; в пробе не нашёлся, проверить"
+"Nelnet, Inc.",Nelnet,student_loan_servicer,maybe,"есть банк-подразделение, проверить"
+GOLDMAN SACHS BANK USA,Goldman Sachs Bank,bank,yes,
+TRUIST FINANCIAL CORPORATION,Truist,regional_bank,yes,
+"Bread Financial Holdings, Inc.",Bread Financial,card_issuer,yes,"карты через Comenity/Bread банки, проверить названия"
+"Shellpoint Partners, LLC",Shellpoint,mortgage_servicer,no,
+TD BANK US HOLDING COMPANY,TD Bank US,regional_bank,yes,проверить название банка
+DISCOVER BANK,Discover Bank,card_issuer,maybe,"в пробе не нашёлся: возможно влит в Capital One, проверить через FDIC /history"
+PNC Bank N.A.,PNC,regional_bank,yes,
+ALLY FINANCIAL INC.,Ally,bank,yes,онлайн-банк и автокредиты
+BARCLAYS BANK DELAWARE,Barclays Bank Delaware,card_issuer,yes,
+"SOFI TECHNOLOGIES, INC.",SoFi,fintech_neobank,maybe,"владеет банком, проверить"
+"SANTANDER HOLDINGS USA, INC.",Santander US,regional_bank,yes,
+"Maximus Federal Services, Inc.",Maximus (Aidvantage),student_loan_servicer,no,подрядчик Минобразования
+UNITED SERVICES AUTOMOBILE ASSOCIATION,USAA,bank,maybe,"банк USAA FSB, проверить"
+Mr. Cooper Group Inc.,Mr. Cooper,mortgage_servicer,no,
+"CITIZENS FINANCIAL GROUP, INC.",Citizens,regional_bank,yes,
+EdFinancial Services,EdFinancial,student_loan_servicer,no,
+"Affirm Holdings, Inc",Affirm,fintech_lending,no,
+FIFTH THIRD FINANCIAL CORPORATION,Fifth Third,regional_bank,yes,
+"Rocket Mortgage, LLC",Rocket Mortgage,mortgage_lender,no,
+ROBINHOOD MARKETS INC.,Robinhood,brokerage_fintech,no,
+"Westlake Services, LLC",Westlake,auto_lender,no,
+"Navient Solutions, LLC.",Navient,student_loan_servicer,no,
+Freedom Mortgage Company,Freedom Mortgage,mortgage_lender,no,
+Ocwen Financial Corporation,Ocwen,mortgage_servicer,no,
+BMO BANK NATIONAL ASSOCIATION,BMO,regional_bank,yes,
+CREDIT ACCEPTANCE CORPORATION,Credit Acceptance,auto_lender,no,
+"HUNTINGTON NATIONAL BANK, THE",Huntington,regional_bank,yes,
+"Coinbase, Inc.",Coinbase,crypto_exchange,no,
+OneMain Finance Corporation,OneMain,consumer_lender,no,
+Comerica,Comerica,regional_bank,yes,
+Servicer under contract with Federal Student Aid,Federal Student Aid servicer,student_loan_servicer,no,"общее обозначение, не одна компания"
+"SELECT PORTFOLIO SERVICING, INC.",Select Portfolio Servicing,mortgage_servicer,no,
+"CLGF Holdco 1, LLC",CLGF Holdco 1,unknown,no,"тип не знаю, проверить вручную"
+M&T BANK CORPORATION,M&T Bank,regional_bank,yes,
+REGIONS FINANCIAL CORPORATION,Regions,regional_bank,yes,
+Incomm Holdings Inc.,InComm,prepaid_cards,no,
+Netspend Corporation,Netspend,prepaid_cards,no,
+Bridgecrest Acceptance Corporation,Bridgecrest,auto_lender,no,
+TOYOTA MOTOR CREDIT CORPORATION,Toyota Motor Credit,auto_lender,maybe,
+"PENNYMAC LOAN SERVICES, LLC.",PennyMac,mortgage_servicer,no,
+KEYCORP,KeyCorp,regional_bank,yes,
+Selene Holdings LLC,Selene,mortgage_servicer,no,

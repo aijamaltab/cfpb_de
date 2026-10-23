@@ -1,0 +1,26 @@
+company_cfpb,cert,bank_name,note
+"JPMORGAN CHASE & CO.",628,"JPMorgan Chase Bank, National Association",
+"BANK OF AMERICA, NATIONAL ASSOCIATION",3510,"Bank of America, National Association",
+"CITIBANK, N.A.",7213,"Citibank, National Association",
+"WELLS FARGO & COMPANY",3511,"Wells Fargo Bank, National Association",
+"GOLDMAN SACHS BANK USA",33124,"Goldman Sachs Bank USA",
+"U.S. BANCORP",6548,"U.S. Bank National Association","холдинг в FDIC записан как U S BCORP, поэтому автосопоставление по названию не сработало"
+"CAPITAL ONE FINANCIAL CORPORATION",4297,"Capital One, National Association","жалобы включают карточный бизнес; после слияний могут быть другие банки группы"
+"PNC Bank N.A.",6384,"PNC Bank, National Association",
+"TRUIST FINANCIAL CORPORATION",9846,"Truist Bank",
+"TD BANK US HOLDING COMPANY",18409,"TD Bank, National Association","у группы два банка: TD Bank N.A. и TD Bank USA N.A."
+"TD BANK US HOLDING COMPANY",33947,"TD Bank USA, National Association",
+"FIFTH THIRD FINANCIAL CORPORATION",6672,"Fifth Third Bank, National Association",
+"HUNTINGTON NATIONAL BANK, THE",6560,"The Huntington National Bank",
+"BMO BANK NATIONAL ASSOCIATION",16571,"BMO Bank National Association",
+"CITIZENS FINANCIAL GROUP, INC.",57957,"Citizens Bank, National Association",
+"M&T BANK CORPORATION",588,"Manufacturers and Traders Trust Company",
+"AMERICAN EXPRESS COMPANY",27471,"American Express National Bank",
+"KEYCORP",17534,"KeyBank National Association",
+"ALLY FINANCIAL INC.",57803,"Ally Bank",
+"REGIONS FINANCIAL CORPORATION",12368,"Regions Bank",
+"SYNCHRONY FINANCIAL",27314,"Synchrony Bank",
+"UNITED SERVICES AUTOMOBILE ASSOCIATION",32188,"USAA Federal Savings Bank",
+"SANTANDER HOLDINGS USA, INC.",29950,"Santander Bank, N.A.",
+"BARCLAYS BANK DELAWARE",57203,"Barclays Bank Delaware",
+"SOFI TECHNOLOGIES, INC.",26881,"SoFi Bank, National Association",

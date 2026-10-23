@@ -1,0 +1,13 @@
+# Airflow не должен разбирать вспомогательные скрипты как DAG (он ищет слова airflow и dag в любом .py).
+# Код, который импортируют DAG, лежит в ingestion/ (импорт идёт через sys.path, не через разбор).
+tools/
+cdc/
+dbt/
+sql/
+docs/
+data/
+seeds/
+ingestion/
+# Исходники DAG (для git и ФТТ). Рабочие копии лежат в ~/work/dags/; иначе один и тот же DAG найден дважды.
+dag/
+dag_batch/

@@ -1,0 +1,10 @@
+snapshots:
+  - name: complaint_cases_snapshot        # история статусов обращений из CDC: открыто -> закрыто (SCD2)
+    relation: source('cdc', 'ods_complaint_cases')
+    config:
+      schema: snapshots
+      unique_key: complaint_id
+      strategy: check
+      check_cols: [status]
+      hard_deletes: invalidate            # удалённое в источнике обращение закрывает свою версию, а не пропадает
+      tags: ['cdc']
