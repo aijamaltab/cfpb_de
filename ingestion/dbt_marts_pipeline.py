@@ -1,6 +1,3 @@
-"""dbt-витрины и их копия в ClickHouse: dm_state_month, dm_type_daily (DAG final_tabyldieva_dbt_marts, раз в сутки)
-и dm_open_cases (слой CDC, раз в час в DAG final_tabyldieva_cdc_integration).
-"""
 import shutil
 import subprocess
 from datetime import datetime
@@ -9,7 +6,7 @@ import cdc_integration as ci
 import cfpb_pipeline as cp
 
 DBT_SCHEMA = cp.LOGIN + "_dbt"
-DBT_MARTS = ["dm_state_month", "dm_type_daily"]          # копируются в ClickHouse
+DBT_MARTS = ["dm_state_month", "dm_type_daily"]      
 DBT_BUILD_SELECT = ["+dm_complaints_daily", "+dm_company_month", "+dm_state_month", "+dm_type_daily"]
 
 

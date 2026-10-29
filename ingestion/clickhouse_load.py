@@ -1,9 +1,5 @@
 """Загрузка из PostgreSQL в ClickHouse (HTTP-интерфейс, без доп. библиотек): копия ods и витрины (dm_complaints_daily,
 dm_company_month, dm_bank_size_quarter, а также dbt-витрины dm_state_month, dm_type_daily и dm_open_cases).
-
-Режим как везде: delete + insert по ds, потом сверка числа строк (и суммы метрики для витрины). Повтор безопасен.
-Параметры подключения: Airflow Variables tabyldieva_ch_host / port / user / password / db (или переменные окружения CH_*).
-Проверено на настоящем ClickHouse: число строк равно ods по обоим контурам (банки и бюро).
 """
 import json
 import os
@@ -141,6 +137,12 @@ MARTS = {
         "cols": ["ds", "company_type", "is_weekend", "complaints_cnt", "untimely_cnt", "relief_cnt", "fed_funds_rate"],
         "key": ["ds", "company_type"], "dates": ["ds"], "nums": ["fed_funds_rate"],
         "sums": ["complaints_cnt", "untimely_cnt", "relief_cnt"],
+    },
+    "dq_metrics": {                # DAG final_tabyldieva_dq, схема <логин>_datamart; история метрик качества по дням
+        "cols": ["check_date", "dimension", "layer", "table_name", "metric", "title", "value", "threshold", "unit",
+                 "severity", "status", "failed"],
+        "key": ["check_date", "table_name", "metric"], "dates": ["check_date"], "nums": ["value", "threshold"],
+        "sums": ["failed"],
     },
 }
 

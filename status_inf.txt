@@ -1,0 +1,26 @@
+   month    |        company_response         | count 
+------------+---------------------------------+-------
+ 2026-10-01 | Closed with explanation         |  3138
+ 2026-10-01 | In progress                     |  2096
+ 2026-10-01 | Closed with monetary relief     |   363
+ 2026-10-01 | Closed with non-monetary relief |   230
+ 2026-10-01 | Untimely response               |    75
+ 2026-09-01 | Closed with explanation         | 16726
+ 2026-09-01 | In progress                     |  8524
+ 2026-09-01 | Closed with monetary relief     |  1971
+ 2026-09-01 | Closed with non-monetary relief |  1233
+ 2026-09-01 | Untimely response               |   313
+ 2026-08-01 | Closed with explanation         | 20159
+ 2026-08-01 | In progress                     |  2960
+ 2026-08-01 | Closed with monetary relief     |  2699
+ 2026-08-01 | Closed with non-monetary relief |  1748
+ 2026-08-01 | Untimely response               |   497
+ 2026-07-01 | Closed with explanation         | 23265
+ 2026-07-01 | Closed with monetary relief     |  2916
+ 2026-07-01 | Closed with non-monetary relief |  1854
+ 2026-07-01 | Untimely response               |   959
+ 2026-07-01 | In progress                     |   176
+ 2026-06-01 | Closed with explanation         | 21672
+ 2026-06-01 | Closed with monetary relief     |  2751
+ 2026-06-01 | Closed with non-monetary relief |  1713
+ 2026-06-01 | Untimely response               |   824

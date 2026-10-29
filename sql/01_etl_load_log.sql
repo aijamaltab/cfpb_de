@@ -1,5 +1,5 @@
--- Журнал загрузок (как у ментора: etl_load_log). Запуск:
---   psql -v schema=${PGUSER}_stg -f sql/01_etl_load_log.sql
+-- Журнал загрузок
+-- Запуск: psql -v schema=tabyldieva_stg -f sql/01_etl_load_log.sql
 create schema if not exists :"schema";
 
 create table if not exists :"schema".etl_load_log (

@@ -125,7 +125,9 @@ python3 ~/work/testqa-example/project/tools/check_project.py --source-table comp
 | `final_tabyldieva_pipeline` | @daily, catchup выключен; ручной запуск за любую дату | `resolve_ds`; `load_stg_complaints >> reconcile >> load_ods_complaints >> load_ods_derived`; `load_stg_fred >> load_ods_fred`; `load_stg_refs >> load_ods_refs`; затем `dq_ods >> trigger_datamart` |
 | `final_tabyldieva_datamart` | запускается основным DAG | `build_dm_complaints`, `build_dm_bank_size` `>> dq_marts >>` `load_clickhouse`, `load_clickhouse_company_month`, `load_clickhouse_bank_size` (параллельно) |
 | `final_tabyldieva_cdc_integration` | @hourly, создаётся на паузе; включать после CDC | `check_cdc_health >> dbt_build_cdc >> load_clickhouse_open_cases`: приёмник не пуст (ошибка) и давно ли менялся (предупреждение), затем `dbt build --select tag:cdc` и копия `dm_open_cases` в ClickHouse; дополнение |
-| `final_tabyldieva_dbt_marts` | ежедневно в 02:00 UTC, создаётся на паузе | `dbt_build_marts >> load_clickhouse_dbt_marts`: `dbt build --select dm_state_month dm_type_daily` и копия обеих витрин в ClickHouse; дополнение, обязательные DAG от него не зависят |
+| `final_tabyldieva_dbt_marts` | ежедневно в 02:00 UTC, создаётся на паузе | `dbt_build_marts >> load_clickhouse_dbt_marts`: `dbt build` всех батч-витрин dbt с родителями (`+dm_complaints_daily +dm_company_month +dm_state_month +dm_type_daily`, без CDC) и копия dm_state_month, dm_type_daily в ClickHouse; дополнение, обязательные DAG от него не зависят |
+| `final_tabyldieva_refresh` | ежедневно в 00:30 UTC, создаётся на паузе | перезагружает 28 дней (в ночь на четверг 120) перед ночным «фронтиром»: для каждого дня запускает основной DAG (Logical date `<день>T12:00:00+00:00`, `reset_dag_run=True`), так в хранилище попадают поздние жалобы, снятые жалобы и новые статусы ответа. Вручную: параметры `start`, `end` (до 130 дней). Глубина выбрана по замеру: статусы CFPB устаканиваются ~за 3 месяца |
+| `final_tabyldieva_dq` | ежедневно в 03:00 UTC | `compute_dq_metrics >> load_clickhouse_dq >> check_thresholds`: метрики качества по шести измерениям (полнота `null_rate`, уникальность `dup_rate`, валидность `bad_rate`, согласованность `mismatch`, точность `drift` / единицы, актуальность `lag`) по слоям stg / ods / datamart / dbt / CDC; история в `tabyldieva_datamart.dq_metrics` и ClickHouse `tabyldieva.dq_metrics` (вкладка «5. Качество данных» в Superset); красный, если метрика с severity=error вышла за порог. Формулы и пороги: `ingestion/dq_metrics.py` |
 | `cfpb_final` | исторический backfill 2023–2026 | цепочка для банковского контура (оставлен как история загрузки) |
 | `cfpb_bureau_pipeline`, `fdic_financials_pipeline`, `cfpb_resync` | дополнительные | бюро; FDIC раз в месяц; досинхронизация поздних жалоб раз в неделю |
 
@@ -199,8 +201,8 @@ unset CHP
 
 ## Структура
 ```
-dag/                final_tabyldieva_pipeline.py  final_tabyldieva_datamart.py  final_tabyldieva_cdc_integration.py  final_tabyldieva_dbt_marts.py
-ingestion/          cfpb_pipeline.py csv_sources.py datamart_pipeline.py dbt_marts_pipeline.py clickhouse_load.py load_cfpb.py cfpb_http.py common.py ...
+dag/                final_tabyldieva_pipeline.py  final_tabyldieva_datamart.py  final_tabyldieva_cdc_integration.py  final_tabyldieva_dbt_marts.py  final_tabyldieva_refresh.py  final_tabyldieva_dq.py
+ingestion/          cfpb_pipeline.py csv_sources.py datamart_pipeline.py dbt_marts_pipeline.py clickhouse_load.py dq_metrics.py load_cfpb.py cfpb_http.py common.py ...
 sql/                01..09 схемы и таблицы · 22..24 FDIC и привязка к банкам · 30 миграция · 31 CSV-таблицы · 32 и 35 ClickHouse · 33 история колонок · 90 самопроверка
 data/               fred/DFF.csv (ставка ФРС)  ref/dim_company.csv  ref/company_bank_map.csv
 dbt/tabyldieva_dwh/ models seeds snapshots tests variants profiles (как у ментора), без пароля
