@@ -18,7 +18,7 @@ clean-targets: ["target", "dbt_packages"]
 vars:
   # Для варианта variants/dm_complaints_daily_v2_incremental.sql: сколько последних дней пересчитывать.
   # 30, потому что CFPB публикует жалобы с опозданием: свежий месяц в источнике неполный.
-  lookback_days: 30
+  lookback_days: 130   # не меньше окна перезагрузки (DAG final_tabyldieva_refresh: до 120 дней раз в неделю)
   # Границы календаря dim_calendar. Окно жалоб: 1 окт 2023 - 30 сен 2026. Расширите, если окно расширят.
   calendar_start: "2023-10-01"
   calendar_end: "2026-12-31"
