@@ -1,91 +1,55 @@
-# Сценарий защиты: 5 минут показа и ответы на проверку
+# Как проверить проект
 
-Цель: за 5 минут показать, что это работающий конвейер с проверками, а не набор скриптов. Говорить коротко, цифры брать из запросов на экране.
-Цифры по банковскому контуру верны на 17.10.2026 (окно жалоб 1 окт 2023 — 30 сен 2026). Если окно расширят, пересчитать по `sql/25_demo_queries.sql`.
-Всё, что отмечено «после запуска на стенде», нужно проверить заранее и записать цифры в свободные ячейки.
+Команды выполняются в терминале JupyterHub из папки `~/work/dags/final_project`. Перед началом:
+```bash
+export PGHOST=postgres PGUSER=tabyldieva PGDATABASE=aiacademy
+read -s -p "PG password: " PGPASSWORD; echo; export PGPASSWORD
+S=${PGUSER}
+```
+`ds` ниже — дата, которую выбирает проверяющий.
 
-## Подготовка (за день и за 10 минут)
-- [ ] Открыты вкладки: Airflow (список DAG), README в репозитории (схема), терминал JupyterHub в папке `~/work/dags/final_project`.
-- [ ] В терминале пароль введён: `read -s -p "PG password: " PGPASSWORD; echo; export PGPASSWORD` и `export PGHOST=postgres PGUSER=tabyldieva PGDATABASE=aiacademy`.
-- [ ] Файл ставки ФРС обновлён (`curl` из README, без `coed`), чтобы дата, которую назовёт преподаватель, в нём была.
-- [ ] Оба DAG `final_tabyldieva_*` включены (переключатель), последние запуски зелёные. Прогнана одна контрольная дата, числа записаны.
-- [ ] Коннекторы CDC в статусе RUNNING: `bash cdc/scripts/connect.sh status sink-tabyldieva`.
-- [ ] Не включать, не выключать и не удалять DAG на глазах у комиссии.
-
-## Ход показа
-| Время | Что говорю | Что показываю |
+## Проверки по требованиям
+| № | Что проверить | Как |
 |---|---|---|
-| 0:00–0:40 | **Задача.** Банки получают жалобы. Я собрал мониторинг: сколько жалоб, по каким продуктам и компаниям, как быстро отвечают, у каких банков жалоб больше при том же размере, сколько обращений висит в работе. Данные открытые, американские; так же строится мониторинг для любого банка. | README: «Бизнес-вопросы» |
-| 0:40–1:30 | **Источники.** Два API: CFPB (жалобы) и FDIC (активы банков по кварталам). Три CSV: ставка ФРС по дням (событие с датой) и два справочника: компании и привязка компании к банку. Плюс «база сайта» с таблицей обращений для CDC; честно: это имитация, у CFPB нет потока изменений. | `docs/passport.md`, таблица источников в README |
-| 1:30–2:30 | **Слои и оркестрация.** stg (как пришло) → ods (типы, ключ) → datamart (витрины), копии витрин в ClickHouse. Два DAG: `final_tabyldieva_pipeline` грузит источники и запускает `final_tabyldieva_datamart` с той же датой. Один запуск = один день, около 780 жалоб. Повтор дня даёт тот же результат. | Airflow: Graph обоих DAG; запуск за дату, зелёные задачи |
-| 2:30–3:20 | **Качество и журнал.** Каждая задача пишет строку в `etl_load_log`; проверки ods и витрин; stg = ods = datamart; сверка суммы витрины в Postgres и ClickHouse. | `psql -f sql/90_acceptance_checks.sql`; `select * from tabyldieva_stg.etl_load_log order by id desc limit 15` |
-| 3:20–4:00 | **CDC.** Меняю статус обращения в `tabyldieva.complaint_cases`; через несколько секунд он в `tabyldieva_ods.ods_complaint_cases`. Debezium читает журнал, Kafka несёт события. | `cdc/README.md`, раздел «Показ для комиссии» |
-| 4:00–4:40 | **dbt.** Витрины перенесены в dbt (структура как у ментора: intermediate, marts, seeds, snapshots, tests), тесты зелёные, результат совпадает с витриной DAG. | `dbt build --exclude tag:cdc` (после CDC: `dbt build`) |
-| 4:40–5:00 | **Находка в данных.** CFPB публикует жалобу после отправки компании, поэтому прошлые дни дополняются задним числом. Сверка с API нашла 57 дней с расхождением; DAG `cfpb_resync` их перезагрузил (+854 жалобы). Свежие ~30 дней недосчитаны, это источник, а не конвейер. | Журнал resync; README, раздел «Особенность данных» |
+| ФТ-1 | паспорт источников | `docs/passport.md` |
+| ФТ-2 | загрузка за дату | Airflow: `final_tabyldieva_pipeline` → ▶ Trigger DAG w/ config → Logical date = `ds`. Затем `select count(*), count(_source_file), count(_loaded_at) from tabyldieva_stg.stg_cfpb_complaints where _ds = 'ds';` и сверка с API: `python3 tools/reconcile_api.py --start ds --end ds`. Ставка ФРС: одна строка в `tabyldieva_stg.stg_fred_dff` за `ds`. Если запуск с такой датой уже есть, нажать Clear у него или указать время `T12:00:00+00:00` |
+| ФТ-3 | типы и ключи ods | `\d tabyldieva_ods.ods_complaints`, `\d tabyldieva_ods.ods_fdic_financials` |
+| ФТ-4 | журнал | `select * from tabyldieva_stg.etl_load_log order by id desc limit 15;` |
+| ФТ-5 | вопрос одним запросом | запросы из `docs/data_model.md`, раздел 8, и сверка двух витрин оттуда же |
+| ФТ-6 | DAG витрин запускается сам | после ▶ основного DAG в `final_tabyldieva_datamart` появляется запуск с той же Logical date |
+| ФТ-7 | ClickHouse = Postgres | Postgres: `select sum(complaints_cnt) from tabyldieva_datamart.dm_complaints_daily;` ClickHouse: `read -s CHP; curl -s --user admin:$CHP "http://clickhouse:8123/" --data-binary "select sum(complaints_cnt) from tabyldieva.dm_complaints_daily final"`. Повторить после Clear того же дня |
+| ФТ-8 | dbt | `cd dbt/tabyldieva_dwh && dbt build -s dm_complaints_daily` — модель и тесты зелёные, среди них `assert_dbt_matches_dag_daily` |
+| ФТ-9 | CDC | `update tabyldieva.complaint_cases set status = 'closed_relief' where complaint_id = <id>;` подождать до 30 секунд, `select status from tabyldieva_ods.ods_complaint_cases where complaint_id = <id>;` статус коннекторов: `bash cdc/scripts/connect.sh status sink-tabyldieva` |
+| ФТ-10 | красная проверка | `update tabyldieva_ods.ods_complaints set company = '' where complaint_id = <id за ds>;` → Clear задачи `dq_ods` → красная, в журнале «пустые company/product=1». Вернуть название, Clear → зелёная. В dbt: `update tabyldieva_dbt.dm_company_month set company_type = null where ctid = (select ctid from tabyldieva_dbt.dm_company_month limit 1);` → `dbt test -s dm_company_month` красный → `dbt build -s dm_company_month` чинит |
+| НФТ-1 | повтор даты | `psql -v ds=ds -v stg=${S}_stg -v ods=${S}_ods -v dm=${S}_datamart -f sql/90_acceptance_checks.sql`, Clear запуска, снова тот же запрос: числа не меняются |
+| НФТ-2 | пароли | `grep -rin "password" . --exclude-dir=.git` — только имена переменных, без значений |
+| НФТ-4 | недоступный API | ▶ основного DAG, дата, которой ещё нет в stg, поле `cfpb_base` = `https://localhost:9/x` → `load_stg_complaints` красная после повторов, в stg за эту дату 0 строк. Параметр действует только на этот запуск |
+| НФТ-5 | скорость | время запуска основного DAG и DAG витрин в Airflow (вкладка Gantt): около минуты на дату |
+| НФТ-6 | с нуля по README | раздел «Как поднять с нуля» в `README.md` |
 
-Если времени мало, пропустить dbt или находку. Если Airflow недоступен, показать README и запросы: цифры те же.
+## Что лежит в слоях
+```bash
+psql -f sql/37_show_layers.sql | less -S
+```
+Файл выводит по экрану на слой: все таблицы со строками и размером, stg, ods и справочники, витрины, dbt, CDC, журнал, метрики
+качества.
 
-## Приёмка по ФТТ: что может попросить преподаватель
-Критерии из ФТТ, раздел 5. Команды выполняются в терминале из папки `final_project` (ds — дата, которую назвал преподаватель).
-
-| № | Проверка | Что сделать |
-|---|---|---|
-| ФТ-1 | Паспорт датасета | открыть `docs/passport.md`; отметку «утверждено» ставит ментор |
-| ФТ-2 | Trigger DAG за дату | Airflow: `final_tabyldieva_pipeline` → Trigger DAG w/ config → Logical date; затем `select count(*), count(_source_file), count(_loaded_at) from tabyldieva_stg.stg_cfpb_complaints where _ds = 'ds'`. Число строк сверить с API: `python3 tools/reconcile_api.py --start ds --end ds`; для CSV: одна строка в `stg_fred_dff`. Если запуск с такой Logical date уже есть, Airflow выдаёт «The logical date ... already exists» и второй не создаёт: нажать Clear у существующего запуска (Grid → столбец запуска → Clear) или ввести другое время того же дня, например `T12:00:00+00:00`; поле `cfpb_base` оставить пустым |
-| ФТ-3 | Типы и ключи | `\d tabyldieva_ods.ods_complaints` (даты — timestamp/date, есть primary key); `\d tabyldieva_ods.ods_fdic_financials` (суммы bigint/numeric) |
-| ФТ-4 | Журнал | `select * from tabyldieva_stg.etl_load_log order by id desc limit 15` |
-| ФТ-5 | Вопрос одним запросом | запросы из `docs/data_model.md`, раздел 5; сверка: `select (select sum(complaints_cnt) from tabyldieva_datamart.dm_complaints_daily where ds >= '2026-08-01' and ds < '2026-09-01') a, (select sum(complaints_cnt) from tabyldieva_datamart.dm_company_month where month = '2026-08-01') b` |
-| ФТ-6 | Запуск только основного DAG | Trigger `final_tabyldieva_pipeline`; DAG витрин запускается сам с той же Logical date |
-| ФТ-7 | ClickHouse = Postgres | Postgres: `select sum(complaints_cnt) from tabyldieva_datamart.dm_complaints_daily`; ClickHouse: `curl -s --user admin:$CHP "http://clickhouse:8123/" --data-binary "select sum(complaints_cnt) from tabyldieva.dm_complaints_daily final"` (пароль через `read -s CHP`); повторить после Clear того же дня. Остальные витрины в ClickHouse (сверх минимума): `dm_company_month`, `dm_bank_size_quarter` сверяются так же, `dm_state_month`, `dm_type_daily` (DAG `final_tabyldieva_dbt_marts`) и `dm_open_cases` (DAG CDC) обновляются своими DAG после dbt, вручную: `tools/clickhouse_backfill_marts.py` |
-| ФТ-8 | dbt | `dbt build --exclude tag:cdc` (после CDC: `dbt build`): все тесты зелёные, среди них `assert_dbt_matches_dag_daily`; первый раз запускать целиком, не `-s` (см. `dbt/tabyldieva_dwh/README.md`) |
-| ФТ-9 | CDC | `update tabyldieva.complaint_cases set status = 'closed_relief' where complaint_id = <id>`; ждать до 30 с; `select status from tabyldieva_ods.ods_complaint_cases where complaint_id = <id>`; `bash cdc/scripts/connect.sh status sink-tabyldieva` |
-| ФТ-10 | Красная проверка | вариант A (DAG): `update tabyldieva_ods.ods_complaints set company = '' where complaint_id = <id за ds>` → Clear задачи `dq_ods` → красная, в журнале текст «пустые company/product=1»; вернуть название обратно и повторить → зелёная. Вариант B (dbt): `update tabyldieva_dbt.dm_company_month set company_type = null where ctid = (select ctid from tabyldieva_dbt.dm_company_month limit 1)` → `dbt test -s dm_company_month` красный → `dbt build -s dm_company_month` лечит |
-| НФТ-1 | Идемпотентность | `psql -v ds=ds ... -f sql/90_acceptance_checks.sql` → Clear запуска → снова; блок «слои за дату» не меняется |
-| НФТ-2 | Секреты | `grep -rin "password" . --exclude-dir=.git` — остаются только имена переменных, значений нет |
-| НФТ-4 | Недоступный API | кнопка ▶ у основного DAG → Logical date (дата, которой ещё нет в stg) и поле `cfpb_base` = `https://localhost:9/x` → запуск → `load_stg_complaints` красная после повторов, `select count(*) from stg_cfpb_complaints where _ds = 'ds'` = 0; параметр действует только на этот запуск, ничего удалять не нужно |
-| НФТ-6 | Воспроизводимость | `README.md`, «Быстрый старт с нуля» |
-
-## Ожидаемые цифры (банковский контур, окно до 30.09.2026)
-| Запрос (`sql/25_demo_queries.sql`) | Ожидание |
+## Контрольные числа на 29.10.2026
+| Что | Значение |
 |---|---|
-| 1. Покрытие | 2023-10-01 … 2026-09-30, 1096 дней, 855 110 |
-| 2. Слои | stg = ods = datamart = 855 110 |
-| 3. Бюро | 92 дня, stg = ods = 1 909 762 |
-| 7. Resync | последние запуски `resync_bank` и `resync_bureau` со статусом success |
-| 8. FDIC | 14 кварталов |
+| Жалобы в ods | 869 218, с 2023-10-01 по 2026-10-13, 1 109 дней без пропусков |
+| Витрины `dm_complaints_daily`, `dm_company_month`, `dm_state_month`, `dm_type_daily` | по 869 218 жалоб, в Postgres и ClickHouse одинаково |
+| `dm_bank_size_quarter` | 264 строки, 11 кварталов |
+| Обращения CDC | 28 240 |
+| Метрики качества | 33, все в норме |
+| Красный запуск основного DAG | один, за 2026-10-13T00:00: это проверка НФТ-4 с недоступным адресом API |
 
-После запуска на стенде добавить: число строк `ods_complaint_cases` ____; сумма `dm_complaints_daily` в Postgres и ClickHouse ____ / ____; дата контрольного запуска ____.
-
-## Вопросы комиссии и честные ответы
-**Почему именно CFPB?** Единственный открытый источник такого масштаба по жалобам на банки, лицензия CC0, ключа нет, меняется каждый день. Для банка (Mbank, Optima) то же самое: поток обращений клиентов, продукты, сроки ответа.
-
-**Откуда CDC, если у CFPB нет потока изменений?** Нет. `complaint_cases` — имитация внутренней системы обращений банка, стартовые строки взяты из реальных жалоб, статусы меняет скрипт. Механика настоящая (журнал WAL, Debezium, Kafka, приёмник с upsert и удалением), изменения синтетические. В банке источником была бы настоящая CRM или система обращений.
-
-**Зачем ставка ФРС?** Это второй тип источника (CSV с датой) и контекст дня в витрине. Причинной связи со числом жалоб я не утверждаю.
-
-**Почему Airflow-запуск = один день?** Лимит курса 100 тыс. строк на запуск. День банковского контура около 780 строк. Историю загрузил отдельный DAG `cfpb_final` по дню за запуск, агрегаты считают витрины в Postgres (SQL) и dbt.
-
-**Что будет, если API изменится или ответит пусто?** Загрузка падает с понятной ошибкой: пустой день, чужая дата, лишнее или пропавшее поле, незнакомый продукт, расхождение числа строк с API. Частичных данных в stg нет, результат пишется в `etl_load_log`.
-
-**Что такое идемпотентность у вас?** Каждый шаг делает delete + insert по дню (`ds`); справочники грузятся целиком. Повторный запуск даты не меняет число строк ни в одном слое.
-
-**Откуда уверенность, что данные полные?** Три уровня: сверка числа строк дня с ответом API при загрузке, проверка stg = ods = datamart, еженедельная досинхронизация. Свежие ~30 дней неполные из-за позднего появления жалоб в самом источнике.
-
-**Зачем второй API (FDIC)?** Чтобы ответить на вопрос «у какого банка жалоб больше при том же размере». Жалобы связаны с банками через справочник `company_bank_map` (24 компании → 25 банков).
-
-**Метрика «жалоб на 1 млрд активов» корректна?** Нет, это грубая замена «жалоб на клиента». Она искажает картину для эмитентов карт. Для точной оценки нужно число клиентов, которого в открытых данных нет.
-
-**Почему только 43% жалоб привязаны к банкам?** Остальные относятся к финтеху, кредитным бюро, сервисерам и кредитным союзам, которых нет в FDIC. Это предел источника.
-
-
-**Зачем ClickHouse, если есть Postgres?** Колоночное хранилище для аналитики: витрины копируются туда без дублей, суммы сверяются, дашборды (Superset) читают все витрины из одного места. Основное хранилище — Postgres.
-
-**Что бы сделали на реальном банке?** Заменили источник на внутреннюю систему обращений, добавили маскирование персональных данных, мониторинг DAG, алерты при росте жалоб; архитектура слоёв остаётся.
-
-## Что не заявлять
-- Что ClickHouse — основное хранилище: это копии витрин для аналитики, проверены сверкой строк и сумм. Витрины dbt (`dm_state_month`, `dm_type_daily`, `dm_open_cases`) там обновляют отдельные дополнительные DAG; пока они на паузе, копия остаётся прошлой сборкой.
-- Что CDC работает на реальных изменениях банка: изменения синтетические.
-- Что Superset-дашборд «живой»: если он будет, то это снимок витрин на дату выгрузки.
-- Что метрика на актив точная.
-- Что паспорт утверждён ментором, пока он не поставил отметку.
-- Что 3-й API есть (бразильский BCB написан, но не установлен): требование ФТТ закрыто CSV.
+## Порядок показа
+1. Задача и вопросы бизнеса — README.
+2. Источники — `docs/passport.md`.
+3. Слои и DAG — Airflow, Graph основного DAG и DAG витрин; запуск за дату.
+4. Данные в слоях — `sql/37_show_layers.sql`.
+5. Журнал и проверки — `etl_load_log`, `sql/90_acceptance_checks.sql`.
+6. CDC — изменить статус обращения и увидеть его в ods.
+7. dbt — `dbt build`, тесты зелёные.
+8. Дашборд Superset — пять вкладок, фильтры слева, вкладка «Качество данных».

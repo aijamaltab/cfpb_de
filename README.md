@@ -1,216 +1,199 @@
-# Мониторинг жалоб клиентов на банки (CFPB) — финальный проект Data Engineering
+# Жалобы клиентов на банки США: хранилище данных на CFPB
 
-Проект собирает жалобы клиентов американских банков из открытого API CFPB, добавляет ставку ФРС (CSV) и справочники компаний (CSV),
-кладёт всё в многослойное хранилище PostgreSQL, считает витрины, копирует витрину в ClickHouse и получает изменения статусов обращений
-через CDC (Debezium + Kafka). Данные американские, архитектура от страны не зависит: так же строится мониторинг жалоб для любого банка.
+Финальный проект курса Data Engineering. Автор: Айжамал Табылдиева, логин на стенде `tabyldieva`.
 
-Требования ментора (ФТТ): `docs/passport.md` (источники), `docs/data_model.md` (модель данных). Сценарий защиты: `docs/DEMO.md`.
+Я собираю жалобы клиентов на американские банки из открытого API CFPB, добавляю к ним размер банков (API FDIC), ставку ФРС и
+справочники компаний (CSV), раскладываю всё по слоям stg → ods → datamart в PostgreSQL, копирую витрины в ClickHouse и показываю
+результат в Superset. Изменения статусов обращений приходят через CDC (Debezium + Kafka). Данные американские, но схема подойдёт
+любому банку, у которого есть поток обращений клиентов.
 
-## Бизнес-вопросы
-1. По каким продуктам и компаниям жалоб больше всего и как это меняется по дням и месяцам?
-2. Как быстро компании отвечают (`timely`) и чем закрывают жалобы?
-3. У каких банков жалоб больше при том же размере (жалоб на 1 млрд USD активов)?
-4. Сколько обращений остаётся «в работе» и как давно они открыты (по потоку изменений CDC)?
+Документы: `docs/passport.md` (источники), `docs/data_model.md` (слои, таблицы, витрины, метрики), `docs/DEMO.md` (как проверить
+проект по критериям приёмки).
 
-Сумм в жалобах нет: только счётчики, доли и сроки.
+## Какие вопросы закрывает проект
+1. По каким продуктам и компаниям жалоб больше всего и как это меняется по дням и месяцам.
+2. Как быстро компании отвечают (поле `timely`) и чем закрывают жалобы.
+3. У каких банков жалоб больше при том же размере (жалоб на 1 млрд USD активов).
+4. Сколько обращений висит «в работе» и как давно они открыты (по потоку CDC).
 
-## Источники данных (подробно: `docs/passport.md`)
-| Тип | Источник | Куда | Как грузится |
+В жалобах нет сумм, поэтому все метрики — это количества, доли и сроки.
+
+## Что сейчас лежит в хранилище (на 29.10.2026)
+- 869 218 жалоб на 8 банковских продуктов за 1 109 дней, с 1 октября 2023 по 13 октября 2026, без пропущенных дней. Число
+  совпадает в ods, во всех витринах и в ClickHouse.
+- 14 кварталов отчётности FDIC (около 63,8 тыс. строк), витрина по размеру банков: 24 компании, 11 кварталов.
+- 28 240 обращений в таблице CDC.
+- Отдельно, сверх задания: контур кредитных бюро и коллекторов, 1 909 762 жалобы за июль–сентябрь 2026. Дальше не грузится.
+
+## Источники
+| Тип | Источник | Таблица stg | Как грузится |
 |---|---|---|---|
-| API | CFPB Consumer Complaint Database | `stg_cfpb_complaints` | события за день `ds` |
-| API | FDIC `/financials` (активы банков по кварталам) | `stg_fdic_financials` | DAG `fdic_financials_pipeline`, раз в месяц |
+| API | CFPB Consumer Complaint Database | `stg_cfpb_complaints` | жалобы за день `ds` |
+| API | FDIC `/financials`, показатели банков по кварталам | `stg_fdic_financials` | все кварталы целиком, отдельным DAG |
 | CSV, событие с датой | ставка ФРС FRED `DFF`, `data/fred/DFF.csv` | `stg_fred_dff` | строка за день `ds` |
-| CSV, справочник | `data/ref/dim_company.csv` (60 компаний, тип) | `stg_dim_company` | целиком |
-| CSV, справочник | `data/ref/company_bank_map.csv` (компания → банк FDIC) | `stg_company_bank_map` | целиком |
-| «База сайта» (CDC) | `tabyldieva.complaint_cases` (статусы обращений, имитация) | `tabyldieva_ods.ods_complaint_cases` | Debezium → Kafka → sink |
+| CSV, справочник | `data/ref/dim_company.csv`, 60 компаний и их тип | `stg_dim_company` | целиком |
+| CSV, справочник | `data/ref/company_bank_map.csv`, компания → банк FDIC | `stg_company_bank_map` | целиком |
+| «База сайта» | `tabyldieva.complaint_cases`, статусы обращений | — | Debezium → Kafka → `ods_complaint_cases` |
 
-Объёмы банковского контура CFPB (проверено 23.10.2026): 855 110 жалоб за 1 окт 2023 — 30 сен 2026, 1096 дней без дыр. Число немного меняется: CFPB публикует жалобы с опозданием, и DAG `cfpb_resync` добавляет поздние.
-Отдельный контур кредитных бюро (1 909 762 жалобы, 92 дня) — дополнение сверх минимума.
+У CFPB нет потока изменений, поэтому таблицу `complaint_cases` для CDC я сделала сама: обращения взяты из реальных жалоб, а статусы
+меняет скрипт. Механика CDC настоящая, изменения синтетические.
 
-## Архитектура
+## Как устроено
 ```
-CFPB API ──────────────> stg_cfpb_complaints ──> ods_complaints ──┐
-CSV FRED DFF ──────────> stg_fred_dff ─────────> ods_fred_dff ────┤
-CSV справочники ───────> stg_dim_company, stg_company_bank_map ─> ods_dim_company, ods_company_bank ┤
-FDIC API ──────────────> stg_fdic_financials ──> ods_fdic_financials ┘
-                                                                  │  DAG final_tabyldieva_pipeline  (stg -> ods -> проверки)
-                                                                  v  TriggerDagRunOperator, та же дата
-                                  <логин>_datamart: dm_complaints_daily, dm_company_month, dm_bank_size_quarter
-                                                                  │  DAG final_tabyldieva_datamart  (витрины -> проверки -> ClickHouse)
-                                                                  v
-                                     ClickHouse: tabyldieva.dm_complaints_daily, dm_company_month, dm_bank_size_quarter  (те же таблицы, те же суммы)
+CFPB API ───> stg_cfpb_complaints ───> ods_complaints ─────────┐
+FRED CSV ───> stg_fred_dff ──────────> ods_fred_dff ───────────┤  DAG final_tabyldieva_pipeline
+CSV справочники ─> stg_dim_company, stg_company_bank_map ─> ods_dim_company, ods_company_bank
+FDIC API ───> stg_fdic_financials ───> ods_fdic_financials ────┘
+                                              │  TriggerDagRunOperator, та же дата
+                                              v
+       tabyldieva_datamart: dm_complaints_daily, dm_company_month, dm_bank_size_quarter   (DAG final_tabyldieva_datamart)
+                                              │
+                                              v
+       ClickHouse tabyldieva.dm_* ──> Superset, дашборд «Жалобы на банки США»
 
-CDC:  tabyldieva.complaint_cases ─Debezium─> Kafka ─sink─> tabyldieva_ods.ods_complaint_cases (текущее состояние)
-dbt:  tabyldieva_ods ──> tabyldieva_dbt (int_*, dim_calendar, dm_complaints_daily, dm_company_month, dm_state_month, dm_type_daily; CDC: dm_open_cases, audit_cdc_vs_batch) + тесты + снимки
-                                       dm_state_month, dm_type_daily, dm_open_cases копируются в ClickHouse (DAG final_tabyldieva_dbt_marts, DAG CDC, скрипт tools/clickhouse_backfill_marts.py)
-Журнал всех шагов: <логин>_stg.etl_load_log
+CDC:  tabyldieva.complaint_cases ─Debezium─> Kafka ─sink─> tabyldieva_ods.ods_complaint_cases ─dbt─> dm_open_cases
+dbt:  ods ─> tabyldieva_dbt: int_*, dm_state_month, dm_type_daily (инкрементальная), копии витрин DAG для сверки, тесты, снимки
+Журнал всех шагов: tabyldieva_stg.etl_load_log.   Метрики качества: tabyldieva_datamart.dq_metrics
 ```
-Слои: `stg` — как пришло, все колонки text + `_ds`, `_source_file`, `_loaded_at`; `ods` — типы и первичные ключи; `datamart` — витрины.
-Режим загрузки везде: delete + insert по дню (`ds`) или целиком для справочников; повторный запуск даты не меняет число строк.
+- **stg** — данные как пришли: все колонки `text` и служебные `_ds`, `_source_file`, `_loaded_at`.
+- **ods** — правильные типы, понятные имена, первичный ключ.
+- **datamart** — витрины для запросов и дашборда.
 
-## Имена (все с логином `tabyldieva`)
-| Что | Имя |
-|---|---|
-| Схемы PostgreSQL (база `aiacademy`) | `tabyldieva_stg`, `tabyldieva_ods`, `tabyldieva_datamart`; «база сайта» для CDC: `tabyldieva`; dbt: `tabyldieva_dbt`; для проверки ментора: `tabyldieva_meta` (отражение журнала) |
-| DAG | `final_tabyldieva_pipeline`, `final_tabyldieva_datamart` (+ дополнительные: `cfpb_final`, `cfpb_bureau_pipeline`, `fdic_financials_pipeline`, `cfpb_resync`) |
-| Airflow Connection | `aiacademy_pg_tabyldieva` (тип Postgres; пароль только там) |
-| ClickHouse | база `tabyldieva`, таблицы с теми же именами, что витрины: `dm_complaints_daily`, `dm_company_month`, `dm_bank_size_quarter`, `dm_state_month`, `dm_type_daily`, `dm_open_cases` |
-| Коннекторы Kafka Connect | `complaint-cases-source-tabyldieva`, `sink-tabyldieva` |
+Везде работает delete + insert по дню (справочники перезаписываются целиком), поэтому повторный запуск даты не меняет число строк.
 
-## Быстрый старт с нуля (терминал JupyterHub, из папки `~/work/dags/final_project`)
-Пароль вводится вручную и в файлах не хранится:
+## DAG
+| DAG | Когда | Что делает |
+|---|---|---|
+| `final_tabyldieva_pipeline` | каждый день; можно запустить за любую дату | API и CSV в stg, сверка числа жалоб с API, ods, проверки, затем запускает DAG витрин с той же датой |
+| `final_tabyldieva_datamart` | его запускает основной DAG | витрины, проверки витрин, копия трёх витрин в ClickHouse со сверкой строк и сумм |
+| `final_tabyldieva_refresh` | 00:30 UTC | перезагружает последние 28 дней, раз в неделю (ночь на четверг) 120 дней: так в хранилище попадают поздние жалобы и новые статусы ответа |
+| `final_tabyldieva_dbt_marts` | 02:00 UTC | `dbt build` батч-витрин с тестами и копия двух dbt-витрин в ClickHouse |
+| `final_tabyldieva_dq` | 03:00 UTC | метрики качества данных по шести измерениям, история в `dq_metrics` |
+| `final_tabyldieva_cdc_integration` | каждый час | проверка приёмника CDC, `dbt build --select tag:cdc`, копия `dm_open_cases` в ClickHouse |
+
+Ручной запуск основного DAG грузит ровно выбранную дату. Запуск по расписанию грузит день на 22 дня раньше своей даты: CFPB
+публикует жалобу только после ответа компании или через 15 дней, поэтому за вчера API почти всегда отдаёт ноль.
+
+Старые DAG первой версии (`cfpb_final` с историей 2023–2026, `cfpb_bureau_pipeline`, `cfpb_resync`, `fdic_financials_pipeline`)
+стоят на паузе. FDIC публикует новый квартал раз в три месяца, тогда я запускаю `fdic_financials_pipeline` вручную.
+
+## Поздние жалобы и статусы
+CFPB дописывает прошлые дни задним числом и меняет статус ответа компании, пока жалоба в работе. Поля «дата изменения» у API нет,
+а CDC к чужой базе не подключить, поэтому DAG `final_tabyldieva_refresh` просто перезагружает окно последних дней целиком.
+Глубину окна я выбрала по замеру: доля жалоб «In progress» по месяцам была 36% за октябрь, 30% за сентябрь, 10,5% за август,
+0,6% за июль и почти ноль раньше. Значит, статусы устаканиваются примерно за три месяца: 28 дней каждую ночь и 120 дней раз
+в неделю. После первой перезагрузки (128 дней) доля «In progress» за август упала до 1,4%, за сентябрь до 19,3%.
+
+## Качество данных
+- В основном DAG: сверка числа жалоб за день с ответом API, проверки ods (пустые поля, чужая дата, продукт вне списка, жалоба
+  в двух днях, объём дня) и проверки витрин (суммы витрин равны ods и друг другу). Красная проверка останавливает загрузку.
+- dbt: `unique`, `not_null`, `accepted_values`, `relationships` и свои тесты, в том числе сверка dbt-витрин с витринами DAG.
+- DAG `final_tabyldieva_dq` каждый день считает 33 метрики по слоям: полнота (`null_rate`), уникальность (`dup_rate`),
+  валидность (`bad_rate`), согласованность (`mismatch`), точность (`drift` ClickHouse против Postgres, сверка с API, единицы
+  измерения) и актуальность (`lag`). У каждой метрики есть порог, формулы лежат в `ingestion/dq_metrics.py`.
+
+## Superset
+Дашборд «Жалобы на банки США» читает витрины из ClickHouse. Пять вкладок: продукты и компании; скорость и итог ответа; размер
+банка; обращения в работе (CDC); качество данных. Слева панель фильтров: период, продукт, компания, тип компании, статусы CDC
+и измерение качества.
+
+## Как поднять с нуля
+Терминал JupyterHub, папка `~/work/dags/final_project`. Пароль вводится руками и в файлах не хранится:
 ```bash
 export PGHOST=postgres PGUSER=tabyldieva PGDATABASE=aiacademy
 read -s -p "PG password: " PGPASSWORD; echo; export PGPASSWORD
-```
-**Шаг 1. Схемы и таблицы** (порядок важен: миграция `30` идёт сразу после журнала и до витрин; на чистом стенде она просто создаёт схемы):
-```bash
 S=${PGUSER}
+```
+**1. Схемы и таблицы** (миграция `30` идёт сразу после журнала):
+```bash
 psql -v ON_ERROR_STOP=1 -v schema=${S}_stg -f sql/01_etl_load_log.sql
 psql -v ON_ERROR_STOP=1 -v stg=${S}_stg -v ods=${S}_ods -v dm=${S}_datamart -v dm_old=${S}_dm -v meta=${S}_meta -f sql/30_final_migration.sql
 psql -v ON_ERROR_STOP=1 -v schema=${S}_stg -f sql/02_stg_cfpb.sql
-psql -v ON_ERROR_STOP=1 -v ods=${S}_ods    -f sql/05_ods_complaints.sql
-psql -v ON_ERROR_STOP=1 -v ods=${S}_ods    -f sql/07_ods_reference.sql
+psql -v ON_ERROR_STOP=1 -v ods=${S}_ods -f sql/05_ods_complaints.sql
+psql -v ON_ERROR_STOP=1 -v ods=${S}_ods -f sql/07_ods_reference.sql
 psql -v ON_ERROR_STOP=1 -v dm=${S}_datamart -f sql/09_dm.sql
 psql -v ON_ERROR_STOP=1 -v stg=${S}_stg -v ods=${S}_ods -f sql/22_fdic_financials.sql
-psql -v ON_ERROR_STOP=1 -v stg=${S}_stg -v ods=${S}_ods -f sql/31_csv_tables.sql   # на базе, созданной до 23.10.2026, ещё: -v ods=${S}_ods -f sql/34_fred_carry.sql
+psql -v ON_ERROR_STOP=1 -v stg=${S}_stg -v ods=${S}_ods -f sql/31_csv_tables.sql
 psql -v ON_ERROR_STOP=1 -v ods=${S}_ods -v dm=${S}_datamart -f sql/24_dm_bank_size.sql
 ```
+**2. Airflow.** Admin → Connections: `aiacademy_pg_tabyldieva` (Postgres; host `postgres`, schema `aiacademy`, login `tabyldieva`,
+port 5432, пароль в форме). Admin → Variables для ClickHouse: `tabyldieva_ch_host`=clickhouse, `tabyldieva_ch_port`=8123,
+`tabyldieva_ch_user`=admin, `tabyldieva_ch_password`, `tabyldieva_ch_db`=tabyldieva; `tabyldieva_ch_enabled`=1 ставится на шаге 6.
 
-**Шаг 2. Airflow:** Admin → Connections → добавить `aiacademy_pg_tabyldieva` (Postgres; Host `postgres`, Schema `aiacademy`, Login `tabyldieva`, Port 5432, пароль вводится в форме).
-Admin → Variables для ClickHouse: `tabyldieva_ch_host`=clickhouse, `tabyldieva_ch_port`=8123, `tabyldieva_ch_user`=admin, `tabyldieva_ch_password`=<пароль>, `tabyldieva_ch_db`=tabyldieva (переменную `tabyldieva_ch_enabled`=1 добавить на шаге 6).
-
-**Шаг 3. CSV-данные.** Справочники лежат в `data/ref/`. Ставка ФРС скачивается одной командой (ключ не нужен):
+**3. Ставка ФРС** (ключ не нужен):
 ```bash
 mkdir -p data/fred
 curl -sS -m 60 "https://fred.stlouisfed.org/graph/fredgraph.csv?id=DFF&cosd=2023-10-01" -o data/fred/DFF.csv
-head -3 data/fred/DFF.csv        # первая строка: observation_date,DFF
-python3 tools/backfill_fred.py   # один раз: вся история ставки в stg и ods (DAG потом добавляет по дню)
+head -3 data/fred/DFF.csv            # первая строка: observation_date,DFF
+python3 tools/backfill_fred.py       # вся история ставки в stg и ods
 ```
-Если файла не хватает до даты запуска, задача `load_stg_fred` сама докачивает ряд той же командой; при ошибке сети повторите `curl` вручную.
-
-**Шаг 4. Положить DAG туда, откуда их читает Airflow, и включить.** Стенд читает DAG из `~/work/dags/` (рядом лежат остальные `*.py`), а в `dag/` хранится исходник для git: эта папка перечислена в `.airflowignore`, чтобы один и тот же DAG не нашёлся дважды.
+**4. DAG.** Airflow стенда читает DAG из `~/work/dags/`, а папка `dag/` — исходники для git (она в `.airflowignore`, иначе DAG
+найдётся дважды):
 ```bash
-cp dag/final_tabyldieva_*.py ..      # из ~/work/dags/final_project
+cp dag/final_tabyldieva_*.py ..
 ```
-Через 1–2 минуты в списке DAG появятся `tabyldieva.final_tabyldieva_pipeline`, `tabyldieva.final_tabyldieva_datamart` и `tabyldieva.final_tabyldieva_cdc_integration` (префикс `tabyldieva.` добавляет стенд через `student_dag`). Включить переключателями `final_tabyldieva_datamart`, затем `final_tabyldieva_pipeline` (новые DAG создаются на паузе; `cdc_integration` пока не включать).
-Запуск за дату: `final_tabyldieva_pipeline` → Trigger DAG w/ config → задать Logical date. DAG витрин запустится сам с той же датой.
-Пока ClickHouse не настроен (шаг 6), последняя задача `load_clickhouse` будет в статусе skipped: это нормально.
+Через 1–2 минуты DAG появятся с префиксом `tabyldieva.`. Включить `final_tabyldieva_datamart` и `final_tabyldieva_pipeline`,
+затем запустить основной DAG за дату: ▶ → Trigger DAG w/ config → Logical date. DAG витрин запустится сам. Пока ClickHouse не
+настроен, задачи `load_clickhouse*` будут skipped, это нормально.
 
-**Шаг 5. История колонок витрин** (один раз, после первого успешного прогона, потому что справочники загружает DAG):
+**5. Тип компании и ставка для старых дат** (один раз, после первого успешного запуска):
 ```bash
-psql -v ON_ERROR_STOP=1 -v ods=${S}_ods -v dm=${S}_datamart -f sql/33_backfill_columns.sql   # ставка и тип компании для старых дат
+psql -v ON_ERROR_STOP=1 -v ods=${S}_ods -v dm=${S}_datamart -f sql/33_backfill_columns.sql
 ```
-**Шаг 6. ClickHouse:** создать таблицы витрин и один раз залить историю, затем включить задачи (Variable `tabyldieva_ch_enabled` = 1):
+**6. ClickHouse.** Создать таблицы витрин и залить историю, потом поставить `tabyldieva_ch_enabled`=1:
 ```bash
 read -s -p "CH password: " CHP; echo
-curl -s --user admin:$CHP "http://clickhouse:8123/" --data-binary @sql/32_clickhouse_dm.sql ; unset CHP
+curl -s --user admin:$CHP "http://clickhouse:8123/" --data-binary @sql/32_clickhouse_dm.sql; unset CHP
 read -s -p "CH password: " CH_PASSWORD; echo; export CH_PASSWORD
 export CH_HOST=clickhouse CH_PORT=8123 CH_USER=admin CH_DB=tabyldieva
-python3 tools/clickhouse_backfill_dm.py                        # dm_complaints_daily
-python3 tools/clickhouse_backfill_marts.py --create            # таблицы остальных витрин (sql/35)
-python3 tools/clickhouse_backfill_marts.py                     # залить остальные шесть витрин целиком (нужен PGPASSWORD); отсутствующие в Postgres пропускаются
+python3 tools/clickhouse_backfill_dm.py
+python3 tools/clickhouse_backfill_marts.py --create
+python3 tools/clickhouse_backfill_marts.py
 ```
-**Шаг 7. Проверка:**
+**7. dbt, CDC и остальные DAG.** dbt: `dbt/tabyldieva_dwh/README.md`; CDC: `cdc/README.md`. После этого включить
+`final_tabyldieva_cdc_integration`, `final_tabyldieva_dbt_marts`, `final_tabyldieva_refresh` и `final_tabyldieva_dq`.
+Таблицу `dq_metrics` DAG качества создаёт сам.
+
+**8. Проверка:**
 ```bash
 psql -v ds=2026-09-14 -v stg=${S}_stg -v ods=${S}_ods -v dm=${S}_datamart -f sql/90_acceptance_checks.sql
-python3 ~/work/testqa-example/project/tools/check_project.py --source-table complaint_cases
+psql -f sql/37_show_layers.sql | less -S       # что лежит в каждом слое
 ```
-Пустой стенд (как у одногруппницы) сначала загружает историю: `cfpb_final` (1096 запусков) или нужную дату через `final_tabyldieva_pipeline`; `fdic_financials_pipeline` — кнопкой Trigger.
-Затем dbt (`dbt/tabyldieva_dwh/README.md`) и CDC (`cdc/README.md`).
+На пустом стенде история грузится запусками основного DAG по дням или DAG `final_tabyldieva_refresh` с параметрами `start`
+и `end` (до 130 дней за раз).
 
-## DAG
-| DAG | Расписание | Задачи |
-|---|---|---|
-| `final_tabyldieva_pipeline` | @daily, catchup выключен; ручной запуск за любую дату | `resolve_ds`; `load_stg_complaints >> reconcile >> load_ods_complaints >> load_ods_derived`; `load_stg_fred >> load_ods_fred`; `load_stg_refs >> load_ods_refs`; затем `dq_ods >> trigger_datamart` |
-| `final_tabyldieva_datamart` | запускается основным DAG | `build_dm_complaints`, `build_dm_bank_size` `>> dq_marts >>` `load_clickhouse`, `load_clickhouse_company_month`, `load_clickhouse_bank_size` (параллельно) |
-| `final_tabyldieva_cdc_integration` | @hourly, создаётся на паузе; включать после CDC | `check_cdc_health >> dbt_build_cdc >> load_clickhouse_open_cases`: приёмник не пуст (ошибка) и давно ли менялся (предупреждение), затем `dbt build --select tag:cdc` и копия `dm_open_cases` в ClickHouse; дополнение |
-| `final_tabyldieva_dbt_marts` | ежедневно в 02:00 UTC, создаётся на паузе | `dbt_build_marts >> load_clickhouse_dbt_marts`: `dbt build` всех батч-витрин dbt с родителями (`+dm_complaints_daily +dm_company_month +dm_state_month +dm_type_daily`, без CDC) и копия dm_state_month, dm_type_daily в ClickHouse; дополнение, обязательные DAG от него не зависят |
-| `final_tabyldieva_refresh` | ежедневно в 00:30 UTC, создаётся на паузе | перезагружает 28 дней (в ночь на четверг 120) перед ночным «фронтиром»: для каждого дня запускает основной DAG (Logical date `<день>T12:00:00+00:00`, `reset_dag_run=True`), так в хранилище попадают поздние жалобы, снятые жалобы и новые статусы ответа. Вручную: параметры `start`, `end` (до 130 дней). Глубина выбрана по замеру: статусы CFPB устаканиваются ~за 3 месяца |
-| `final_tabyldieva_dq` | ежедневно в 03:00 UTC | `compute_dq_metrics >> load_clickhouse_dq >> check_thresholds`: метрики качества по шести измерениям (полнота `null_rate`, уникальность `dup_rate`, валидность `bad_rate`, согласованность `mismatch`, точность `drift` / единицы, актуальность `lag`) по слоям stg / ods / datamart / dbt / CDC; история в `tabyldieva_datamart.dq_metrics` и ClickHouse `tabyldieva.dq_metrics` (вкладка «5. Качество данных» в Superset); красный, если метрика с severity=error вышла за порог. Формулы и пороги: `ingestion/dq_metrics.py` |
-| `cfpb_final` | исторический backfill 2023–2026 | цепочка для банковского контура (оставлен как история загрузки) |
-| `cfpb_bureau_pipeline`, `fdic_financials_pipeline`, `cfpb_resync` | дополнительные | бюро; FDIC раз в месяц; досинхронизация поздних жалоб раз в неделю |
+## Имена
+| Что | Имя |
+|---|---|
+| Схемы Postgres (база `aiacademy`) | `tabyldieva_stg`, `tabyldieva_ods`, `tabyldieva_datamart`, `tabyldieva_dbt`, `tabyldieva_dbt_snapshots`; «база сайта» `tabyldieva` |
+| Airflow Connection | `aiacademy_pg_tabyldieva`, пароль только там |
+| ClickHouse | база `tabyldieva`, таблицы с теми же именами, что витрины |
+| Коннекторы Kafka Connect | `complaint-cases-source-tabyldieva`, `sink-tabyldieva` |
 
-**Какой день грузит запуск** (задача `resolve_ds`). Ручной запуск, в том числе с Logical date, которую выберет преподаватель, грузит ровно эту дату. Запуск по расписанию грузит день на 22 дня раньше своей Logical date: CFPB публикует жалобу после ответа компании или через 15 дней, поэтому за «вчера» API часто отдаёт 0 (проверено 23.10.2026), а день двадцатидвухдневной давности уже устоялся. Число 22 выбрано так, чтобы ночной запуск продолжил окно проекта с 1 октября без дыр. В журнале и витринах стоит загруженный день, а не Logical date запуска. Позднее добавленные жалобы дозагружает `cfpb_resync` раз в неделю.
-
-Каждая задача пишет строку в `tabyldieva_stg.etl_load_log` (источник, дата, начало и конец, статус, число строк, текст ошибки).
-Внешний API: таймаут 30 с и 3 повтора на запрос, плюс `retries=1` у задачи; при ошибке в stg ничего не пишется. Адрес API можно подменить
-параметром `cfpb_base` в форме запуска DAG (▶ → поле `cfpb_base`, например `https://localhost:9/x`): так проверяется недоступный адрес; параметр действует только на этот запуск, ничего удалять не нужно.
-
-## dbt
-`dbt/tabyldieva_dwh/`: структура как у ментора (`models/intermediate` и `marts`, `seeds`, `snapshots`, `tests`, `variants`, `profiles`). Четыре витрины на dbt (две повторяют витрины DAG и сверяются с ними тестами, две новые: по штатам и инкрементальная по типам компаний), слой CDC (`tag:cdc`), два справочника-seed, два снимка (история справочника компаний и история статусов обращений), свои тесты. Запуск и описание: `dbt/tabyldieva_dwh/README.md`.
-
-## CDC (Debezium + Kafka)
-Порядок шагов и команды: `cdc/README.md`. Таблица-источник `tabyldieva.complaint_cases` — имитация системы обработки обращений (у открытого API нет потока изменений),
-изменения статусов синтетические. Приёмник: `tabyldieva_ods.ods_complaint_cases` (текущее состояние).
-
-## Особенность данных: жалобы появляются с опозданием
-CFPB публикует жалобу только после отправки компании, поэтому прошлые дни дополняются задним числом, иногда жалобы снимаются.
-Проверено 17.10.2026: в банковском контуре 57 дней расходились с API; после досинхронизации (`cfpb_resync`) расхождений 0, добавилось 854 жалобы.
-Свежие ~30 дней всегда недосчитаны: на дашборде их нужно помечать. Ограничение метода досинхронизации: если в 7-дневном блоке одна жалоба
-добавилась, а другая снялась, сумма совпадёт и блок пропустится.
-
-## Проверки
-```bash
-S=$PGUSER     # логин; схемы ${S}_stg, ${S}_ods, ${S}_datamart
-# банковский контур: покрытие 1096 дней, нет дыр, stg = ods = datamart
-psql -v stg=${S}_stg -v ods=${S}_ods -v dm=${S}_datamart -v d1=2023-10-01 -v d2=2026-09-30 -f sql/11_window_checks.sql
-# контур бюро
-psql -v stg=${S}_stg -v ods=${S}_ods -v d1=2026-07-01 -v d2=2026-09-30 -f sql/13_bureau_checks.sql
-# приёмка за одну дату (слои, витрины, ClickHouse)
-psql -v ds=2026-09-14 -v stg=${S}_stg -v ods=${S}_ods -v dm=${S}_datamart -f sql/90_acceptance_checks.sql
-# сверка с API по дням (полное окно: тысячи запросов; для показа взять один квартал)
-python3 tools/reconcile_api.py --start 2026-07-01 --end 2026-09-30
-python3 tools/reconcile_bureau.py
-# журнал загрузок
-psql -c "select source, status, count(*) from ${S}_stg.etl_load_log group by 1,2 order by 1,2"
-```
-DAG сами проверяют: `reconcile` (число строк дня = ответ API), `dq_ods` и `dq_marts` (ключи, даты, пустые поля, продукты, суммы витрин),
-в `fdic_financials_pipeline` сверку с `meta.total` по каждому кварталу.
-
-## ClickHouse
-Копии для аналитики: `tabyldieva.cfpb_complaints` (банки), `tabyldieva.cfpb_bureau` (бюро) и **все шесть витрин** `dm_*` с теми же именами
-(`ReplacingMergeTree`, HTTP 8123): дашборды читают витрины из одного места. Минимум ФТТ (ФТ-7) требует одну витрину, остальные сделаны сверх минимума.
-Три витрины ведёт DAG `final_tabyldieva_datamart` по дням: `dm_complaints_daily` (день), `dm_company_month` (месяц дня `ds` перегружается целиком),
-`dm_bank_size_quarter` (пересборка целиком, как в Postgres). Витрины dbt обновляют отдельные DAG: `dm_state_month` и `dm_type_daily` раз в сутки
-(`final_tabyldieva_dbt_marts`: `dbt build`, затем копия), `dm_open_cases` (CDC, снимок «на сейчас») раз в час (`final_tabyldieva_cdc_integration`).
-Оба DAG создаются на паузе и пропускают копирование, пока `tabyldieva_ch_enabled` не равна 1. Вручную после любого `dbt build`:
-`python3 tools/clickhouse_backfill_marts.py --only dm_state_month,dm_type_daily,dm_open_cases`. В ClickHouse не копируются служебные колонки
-`_dbt_run_id` и `_built_at`. Superset читает ClickHouse напрямую: датасет это ссылка на таблицу, копировать данные в Superset не нужно. Подключение берётся из Airflow Variables `tabyldieva_ch_host`, `_ch_port`, `_ch_user`, `_ch_password`, `_ch_db`;
-пароль только там, в файлах его нет. Задачи `load_clickhouse` выполняются, когда `tabyldieva_ch_enabled` = 1, иначе пропускаются.
-Таблицы создаются файлами `sql/08_clickhouse.sql`, `sql/14_clickhouse_bureau.sql`, `sql/32_clickhouse_dm.sql` и `sql/35_clickhouse_marts.sql` (последний через скрипт, см. шаг 6; пароль вводится вручную):
-```bash
-read -s -p "CH password: " CHP; echo
-curl -s --user admin:$CHP "http://clickhouse:8123/" --data-binary @sql/32_clickhouse_dm.sql
-curl -s --user admin:$CHP "http://clickhouse:8123/" --data-binary "select count() from tabyldieva.dm_complaints_daily final"
-unset CHP
-```
-Загрузка: удалить срез (день, месяц) и вставить заново, затем сверить с Postgres число строк и суммы метрик; несовпадение делает задачу красной.
-Сверка вручную (одна витрина): `select sum(complaints_cnt) from tabyldieva_datamart.dm_company_month` в Postgres и
-`select sum(complaints_cnt) from tabyldieva.dm_company_month final` в ClickHouse.
-
-## Дополнения сверх минимума
-- **Superset**: источник данных ClickHouse, база `tabyldieva`, датасеты на витринах `dm_*`; дашборд показывает состояние таблиц на момент последней загрузки (см. `docs/DEMO.md`).
-
-## Ограничения (честно)
-- Данные американские, сумм жалоб нет.
-- Только около 43% жалоб относятся к банкам, застрахованным FDIC (24 компании → 25 банков). Остальное — финтех, бюро, сервисеры, кредитные союзы.
-- «Жалоб на 1 млрд активов» — грубый заменитель «жалоб на клиента»; сравнивать осторожно. Слияния банков не проверялись.
-- Ставка ФРС показана как контекст дня; причинной связи с числом жалоб проект не утверждает.
-- CDC: источник имитирован, статусы меняются скриптом.
+## Ограничения
+- Только около 43% жалоб относятся к банкам из FDIC (24 компании, 25 банков). Остальное — финтех, бюро, сервисеры и кредитные
+  союзы, их в FDIC нет.
+- «Жалоб на 1 млрд активов» — грубая замена «жалоб на клиента», числа клиентов в открытых данных нет. Слияния банков я не проверяла.
+- Ставка ФРС стоит в витрине как контекст дня, причинную связь с жалобами я не утверждаю.
+- Последние недели всегда неполные: CFPB продолжает дописывать жалобы и менять статусы.
+- В ClickHouse остались построчные копии `cfpb_complaints` и `cfpb_bureau` из первой версии проекта, они не обновляются.
+  Дашборд работает только с витринами.
 
 ## Структура
 ```
-dag/                final_tabyldieva_pipeline.py  final_tabyldieva_datamart.py  final_tabyldieva_cdc_integration.py  final_tabyldieva_dbt_marts.py  final_tabyldieva_refresh.py  final_tabyldieva_dq.py
-ingestion/          cfpb_pipeline.py csv_sources.py datamart_pipeline.py dbt_marts_pipeline.py clickhouse_load.py dq_metrics.py load_cfpb.py cfpb_http.py common.py ...
-sql/                01..09 схемы и таблицы · 22..24 FDIC и привязка к банкам · 30 миграция · 31 CSV-таблицы · 32 и 35 ClickHouse · 33 история колонок · 90 самопроверка
-data/               fred/DFF.csv (ставка ФРС)  ref/dim_company.csv  ref/company_bank_map.csv
-dbt/tabyldieva_dwh/ models seeds snapshots tests variants profiles (как у ментора), без пароля
-cdc/                sql/ connectors/ scripts/ README.md
-docs/               passport.md data_model.md sources.md api_sample.json DEMO.md ...
-tools/              backfill_fred.py clickhouse_backfill_dm.py clickhouse_backfill_marts.py save_api_sample.py reconcile_api.py ...
+dag/        final_tabyldieva_pipeline, _datamart, _refresh, _dbt_marts, _dq, _cdc_integration
+ingestion/  загрузка API и CSV (load_cfpb.py, cfpb_http.py, csv_sources.py, fdic_fin_pipeline.py), слои и витрины
+            (cfpb_pipeline.py, datamart_pipeline.py), ClickHouse (clickhouse_load.py), качество (dq_metrics.py), CDC и dbt
+sql/        таблицы по слоям, ClickHouse, проверки (90_acceptance_checks.sql), просмотр слоёв (37_show_layers.sql)
+dbt/        tabyldieva_dwh: models (intermediate, marts), seeds, snapshots, tests, variants, profiles без пароля
+cdc/        sql для источника и приёмника, шаблоны коннекторов, скрипты
+data/       fred/DFF.csv, ref/dim_company.csv, ref/company_bank_map.csv
+docs/       passport.md, data_model.md, DEMO.md, api_sample.json (пример ответа API)
+tools/      сверка с API, заливка истории в ClickHouse, загрузка ставки ФРС
 ```
-Старые DAG-файлы (`final_cfpb_*.py`, `final_tabyldieva_fdic_financials.py`) лежат рядом с папкой проекта, в `~/work/dags`. Исходники новых лежат в `dag/`, рабочие копии для Airflow кладутся в `~/work/dags` (шаг 4). Копии старых для git — в `dag_batch/` (Airflow эту папку не читает, см. `.airflowignore`).
 
 ## Что дальше
-Дашборд (последние ~30 дней помечать как неполные), снятие `end_date` у `cfpb_final`, чтобы октябрь проходил по всей цепочке.
+- Заменить ручной запуск FDIC на ежеквартальное расписание.
+- Догружать построчную копию жалоб в ClickHouse или убрать её.
+- Алерт в мессенджер, когда DAG качества становится красным.
+- Генерация однотипных DAG через dag-factory.

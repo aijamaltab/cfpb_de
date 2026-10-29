@@ -112,6 +112,12 @@ PG_METRICS = [
      "select count(*) from (select date_trunc('month', ds)::date m, sum(complaints_cnt) n from " + DM + ".dm_complaints_daily group by 1) d "
      "full join (select month m, sum(complaints_cnt) n from " + DM + ".dm_company_month group by 1) c using (m) "
      "where coalesce(d.n, 0) <> coalesce(c.n, 0)", 0, "месяцев", "error"),
+    ("согласованность", "dbt", "dm_state_month", "mismatch(dbt и ods)", "Расхождение витрины dbt по штатам с ods (жалоб): dbt не пересобран",
+     "select abs((select coalesce(sum(complaints_cnt), 0) from " + DBT + ".dm_state_month) - (select count(*) from "
+     + ODS + ".ods_complaints))", 0, "строк", "warn"),
+    ("согласованность", "dbt", "dm_type_daily", "mismatch(dbt и ods)", "Расхождение витрины dbt по типам компаний с ods (жалоб)",
+     "select abs((select coalesce(sum(complaints_cnt), 0) from " + DBT + ".dm_type_daily) - (select count(*) from "
+     + ODS + ".ods_complaints))", 0, "строк", "warn"),
     ("согласованность", "dbt", "dm_open_cases", "mismatch(CDC)", "Расхождение витрины dbt с приёмником CDC (обращений)",
      "select abs((select coalesce(sum(cases_cnt), 0) from " + DBT + ".dm_open_cases) - (select count(*) from "
      + ODS + ".ods_complaint_cases))", 0, "строк", "warn"),
