@@ -1,9 +1,5 @@
 """dbt-витрины и их копия в ClickHouse: dm_state_month, dm_type_daily (DAG final_tabyldieva_dbt_marts, раз в сутки)
 и dm_open_cases (слой CDC, раз в час в DAG final_tabyldieva_cdc_integration).
-
-Зачем отдельно от DAG витрин: DAG витрин по ФТТ считает витрины из ods в Postgres, а эти витрины строит dbt. Если dbt недоступен
-воркеру или упадёт, обязательные DAG (загрузка, витрины) остаются зелёными. Это дополнение сверх минимума ФТТ.
-Подключение dbt берётся так же, как в слое CDC (cdc_integration._dbt_env): пароль из Airflow Connection, в файлах его нет.
 """
 import shutil
 import subprocess
@@ -13,16 +9,19 @@ import cdc_integration as ci
 import cfpb_pipeline as cp
 
 DBT_SCHEMA = cp.LOGIN + "_dbt"
-DBT_MARTS = ["dm_state_month", "dm_type_daily"]
+DBT_MARTS = ["dm_state_month", "dm_type_daily"]          # копируются в ClickHouse
+DBT_BUILD_SELECT = ["+dm_complaints_daily", "+dm_company_month", "+dm_state_month", "+dm_type_daily"]
 
 
 def do_dbt_build_marts(ds):
-    """dbt build --select dm_state_month dm_type_daily: модели и их тесты. Нет dbt у воркера -> пропуск, а не ошибка."""
+    """dbt build всех батч-витрин dbt и их родителей, с тестами. Нет dbt у воркера -> пропуск, а не ошибка."""
     from airflow.exceptions import AirflowSkipException
     if not shutil.which("dbt"):
-        raise AirflowSkipException("dbt недоступен воркеру Airflow: запускайте руками (cd dbt/tabyldieva_dwh && dbt build -s dm_state_month dm_type_daily)")
+        raise AirflowSkipException("dbt недоступен воркеру Airflow: запускайте руками (cd dbt/tabyldieva_dwh && dbt build -s "
+                                   + " ".join(DBT_BUILD_SELECT) + " --exclude tag:cdc)")
     started_at = datetime.now()
-    result = subprocess.run(["dbt", "build", "--select", *DBT_MARTS], cwd=str(ci.DBT_DIR), env=ci._dbt_env(),
+    result = subprocess.run(["dbt", "build", "--select", *DBT_BUILD_SELECT, "--exclude", "tag:cdc"],
+                            cwd=str(ci.DBT_DIR), env=ci._dbt_env(),
                             capture_output=True, text=True, timeout=900)
     tail = "\n".join((result.stdout or "").strip().splitlines()[-12:])
     print(tail)
